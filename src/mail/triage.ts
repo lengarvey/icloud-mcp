@@ -727,16 +727,25 @@ function assertMoveList(entries: readonly MoveEntry[]): void {
   }
 }
 
+/** Optional absolute cutoff for jobs whose lease began before login/open. */
+export interface MoveSessionOptions extends MailSessionOptions {
+  /** No mutation command may start at or after this server-chosen time. */
+  writeDeadlineAt?: number;
+}
+
 /** The whole move, inside an open mutating session. */
 async function moveListWithin(
   session: MutatingMailSession,
   entries: readonly MoveEntry[],
   destinationMailbox: string,
-  options: MailSessionOptions,
+  options: MoveSessionOptions,
   ledger: MoveLedger,
 ): Promise<MoveOutcome> {
   const startedAt = Date.now();
-  const deadlineAt = startedAt + (options.callDeadlineMs ?? CALL_DEADLINE_MS);
+  const deadlineAt = Math.min(
+    startedAt + (options.callDeadlineMs ?? CALL_DEADLINE_MS),
+    options.writeDeadlineAt ?? Infinity,
+  );
 
   // Whole-session refusals, with zero writes.
   if (!hasMoveCommands(session.capability)) {
@@ -840,7 +849,7 @@ export async function moveMessagesOver(
   source: MoveSource,
   entries: readonly MoveEntry[],
   destinationMailbox: string,
-  options: MailSessionOptions = {},
+  options: MoveSessionOptions = {},
 ): Promise<MoveOutcome> {
   assertMoveList(entries);
   const ledger: MoveLedger = { results: [], inFlight: null, started: false };
@@ -864,7 +873,7 @@ export async function moveMessages(
   source: MoveSource,
   entries: readonly MoveEntry[],
   destinationMailbox: string,
-  options: MailSessionOptions = {},
+  options: MoveSessionOptions = {},
 ): Promise<MoveOutcome> {
   assertMoveList(entries);
   const ledger: MoveLedger = { results: [], inFlight: null, started: false };

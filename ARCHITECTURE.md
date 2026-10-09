@@ -233,6 +233,7 @@ tool; this map does not repeat it.
 | File | Role |
 |------|------|
 | `user-agent.ts` | **The per-person Durable Object.** Holds the lease, its own stored name, the recall ledger, the sealed autonomy record, the rules and their job state, and one alarm. Never opens a socket, never imports mail, DAV, tool or auth code. |
+| `mail-bulk.ts` | Caller-driven bulk move progress: immutable exact scope, bounded claims, per-message outcomes, cancellation and expiry. No runtime imports or mail work. Durable Object RPC wrappers commit its multi-key transitions atomically. |
 | `lease.ts` | The connection lease as the Worker request sees it: `agentFor` (the only place a stub is built) and `createLeasedMail`, which takes the lease before a mail session and gives it back after. |
 | `recall-ledger.ts` | The recall ledger's SQLite tables: every vector id a person owns, always a superset of the index. Also the page slot, pace and quota. |
 | `autonomy.ts` | The autonomy key: exchange the code, seal the refresh token, the standing check, the alarm job, and disarm. |
@@ -729,6 +730,35 @@ guarantees that the scanner enforces but cannot explain. The reasons matter.
     days, and never a body;
   - attachment copies being staged or saved, deleted within about two days;
   - discovery metadata, for 24 hours;
-  - each person's rules and what the job did, with no subject, address or text.
+  - each person's rules and what the job did, with no subject, address or text;
+  - up to eight bulk move job records: opaque IDs, folder IDs, fingerprints and
+    per-message outcomes, with no message text or credentials. Jobs stop after
+    24 hours; expired records are reclaimed on the next new bulk job.
 - **No IMAP connection pooling.** Connect, act, close, every session. The
   per-person object holds a lease, never a socket.
+
+
+### Caller-driven bulk move jobs
+
+Bulk approval uses the separate `mail-bulk` confirmation target, never the
+ordinary 25-message `mail` target. The preview binds up to 1,000 exact IDs and
+fingerprints, one source validity and one resolved destination. A start verifies
+that signature, owner, expiry, hash and every ID before atomically creating one
+job under the signed nonce in the owner's Durable Object. Retrying the same
+start cannot reset progress. No credentials or mail text enter these records.
+
+Each explicit step takes the normal connection lease, durably claims at most
+25 pending entries, and invokes the existing move verb once. Completed evidence
+is retained; only exact `not_copied/not-attempted` results become pending again.
+Uncertain, copied-but-not-removed, changed and abandoned in-flight entries are
+held for inspection. Claim tokens prevent a stale worker from overwriting a
+new claim. Cancel stops new claims, while an in-flight batch can still settle.
+An absolute write cutoff begins before lease acquisition and sign-in, in
+addition to the existing per-session deadline. It prevents late mutation
+commands after slow login. The inherited login/open/teardown socket lifetime
+can still exceed the session deadline; this feature does not claim otherwise.
+
+Jobs expire after 24 hours; at most eight are retained, and capacity never
+evicts an unexpired nonce. Expired records are removed when a new job is
+created. These jobs have no alarm driver, do not enter the autonomous rules
+runner, and never trigger a recall step after a status or cancellation call.

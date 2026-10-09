@@ -23,8 +23,9 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { env } from "cloudflare:workers";
 import { z } from "zod";
-import type { LeasedMail } from "../../agent/lease";
+import { type LeasedMail, agentFor } from "../../agent/lease";
 import {
+  BULK_MAIL_CONFIRM_SET_MAX,
   CONFIRM_TTL_SECONDS,
   CONFIRM_VERSION,
   ConfirmationInvalidError,
@@ -88,6 +89,7 @@ import type {
   SearchPage,
 } from "../../mail/service";
 import {
+  CALL_DEADLINE_MS,
   DEFAULT_MAILBOX,
   appendDraft,
   getAttachmentContent,
@@ -1767,18 +1769,21 @@ type MailConfirmationFields = Omit<MailConfirmPayload, "v" | "t" | "j" | "x" | "
 async function mintMailConfirmation(
   actor: Principal,
   fields: MailConfirmationFields,
+  bulk = false,
+  jobId = crypto.randomUUID(),
 ): Promise<string> {
-  return mintConfirmation(
-    {
-      v: CONFIRM_VERSION,
-      t: "mail",
-      j: crypto.randomUUID(),
-      x: Math.floor(Date.now() / 1000) + CONFIRM_TTL_SECONDS,
-      u: actor.userId,
-      ...fields,
-    },
-    env.CONFIRM_SECRET,
-  );
+  const base = {
+    v: CONFIRM_VERSION as typeof CONFIRM_VERSION,
+    j: jobId,
+    x: Math.floor(Date.now() / 1000) + CONFIRM_TTL_SECONDS,
+    u: actor.userId,
+    ...fields,
+  };
+  if (bulk) {
+    if (fields.k !== "move") throw new ConfirmationInvalidError();
+    return mintConfirmation({ ...base, t: "mail-bulk", k: "move" }, env.CONFIRM_SECRET);
+  }
+  return mintConfirmation({ ...base, t: "mail" }, env.CONFIRM_SECRET);
 }
 
 /** The fixed reason for each move refusal. ASCII, and no server text. */
@@ -1882,9 +1887,10 @@ export interface MoveRequest {
  * the same message twice, and messages from more than one folder. `null` when
  * the list passes all three.
  */
-function moveListRefusal(ids: readonly string[], refs: readonly MessageRef[]): ToolResult | null {
-  if (ids.length > MOVE_SET_CAP) {
-    return moveRefusalResult("too-many", { cap: MOVE_SET_CAP });
+function moveListRefusal(ids: readonly string[], refs: readonly MessageRef[], cap = MOVE_SET_CAP): ToolResult | null {
+  if (ids.length > cap) {
+    if (cap === MOVE_SET_CAP) return moveRefusalResult("too-many", { cap });
+    return refusalAnswer("too-many", `A move preview takes at most ${cap} messages.`, { cap });
   }
   const keys = refs.map((ref) => JSON.stringify([ref.mailbox, ref.uidValidity, ref.uid]));
   const repeated = ids.filter((_id, index) => keys.indexOf(keys[index]!) !== index);
@@ -1926,6 +1932,7 @@ export async function buildMovePreview(
   request: MoveRequest,
   destination: MoveDestination,
   op: "move",
+  bulk = false,
 ): Promise<ToolResult> {
   const first = request.refs[0]!;
   const source = { mailbox: first.mailbox, uidValidity: first.uidValidity };
@@ -2013,6 +2020,7 @@ export async function buildMovePreview(
     destination: request.destinationId ?? destinationId,
   };
 
+  const jobId = crypto.randomUUID();
   const confirmToken = await mintMailConfirmation(actor, {
     k: "move",
     h: await mailMoveChangeHashOf(change),
@@ -2021,7 +2029,7 @@ export async function buildMovePreview(
     q: destinationId,
     qr: role,
     l,
-  });
+  }, bulk, jobId);
 
   const sourceFolder = facts.listing.folders.find(
     (folder) => folder.wireName === source.mailbox,
@@ -2045,6 +2053,7 @@ export async function buildMovePreview(
     {
       confirmToken,
       expiresInSeconds: CONFIRM_TTL_SECONDS,
+      ...(bulk ? { execution: "resumable", jobId, jobLifetimeSeconds: 86400 } : {}),
       change,
       confirmationLine,
       source: { id: sourceId },
@@ -2261,6 +2270,89 @@ export async function applyMailCommit(
     destinationMailbox,
     role: payload.qr,
   };
+}
+
+// Bulk jobs are explicitly driven by calls, never by the autonomous rules job.
+// A signed preview binds the exact original set. The owner's Durable Object
+// spends its nonce atomically by creating ONE immutable job, so retrying start
+// after a lost response retrieves progress instead of repeating a mutation.
+export async function startBulkMailJob(
+  actor: Principal,
+  confirmToken: string,
+  change: NormalizedMailMove,
+) {
+  const payload = await verifyConfirmation(confirmToken, env.CONFIRM_SECRET, actor.userId, "mail-bulk");
+  if (payload.k !== "move" || payload.q === null || change.destination !== payload.q ||
+      !(await changeHashMatches(await mailMoveChangeHashOf(change), payload.h)) ||
+      change.ids.length !== payload.l.length) throw new ConfirmationInvalidError();
+  let source: string;
+  try {
+    source = decodeFolderId(payload.m).mailbox;
+    const destination = decodeFolderId(payload.q).mailbox;
+    if (source === destination) throw new ConfirmationInvalidError();
+    for (let index = 0; index < change.ids.length; index += 1) {
+      const ref = decodeMessageId(change.ids[index]!);
+      if (ref.mailbox !== source || ref.uidValidity !== payload.uv || ref.uid !== payload.l[index]!.i) {
+        throw new ConfirmationInvalidError();
+      }
+    }
+  } catch { throw new ConfirmationInvalidError(); }
+  return agentFor(actor).bulkMailCreate({
+    jobId: payload.j,
+    sourceFolderId: payload.m,
+    uidValidity: payload.uv,
+    destinationFolderId: payload.q,
+    destinationRole: payload.qr,
+    entries: payload.l,
+    ids: change.ids,
+  });
+}
+
+/** One bounded session. Lease first, durable claim second, IMAP third. */
+export async function stepBulkMailJob(actor: Principal, mail: LeasedMail, jobId: string) {
+  const stub = agentFor(actor);
+  // Include lease RPC and sign-in time: the legacy session deadline starts
+  // only after login/open. A delayed request must never begin late writes.
+  const writeDeadlineAt = Date.now() + CALL_DEADLINE_MS;
+  return mail.withConnectionLease(actor, async (leased) => {
+    const claimed = await stub.bulkMailClaim(jobId);
+    if (!claimed.ok) return claimed;
+    const { claim, scope } = claimed;
+    if (claim === null) return { ok: true as const, job: claimed.job };
+    const sourceMailbox = decodeFolderId(scope.sourceFolderId).mailbox;
+    const destinationMailbox = decodeFolderId(scope.destinationFolderId).mailbox;
+    let outcome: MoveOutcome;
+    try {
+      outcome = await moveMessages(actor, leased,
+        { mailbox: sourceMailbox, uidValidity: scope.uidValidity },
+        claim.entries.map(({ entry }) => ({ uid: entry.i, size: entry.z, internalDate: entry.d, modSeq: entry.n })),
+        destinationMailbox, { writeDeadlineAt: Math.min(writeDeadlineAt, claim.expiresAt) });
+    } catch (err) {
+      // A lost result is never permission to copy again. Mark the whole claim
+      // uncertain, even when a failure might have preceded the first write.
+      const settled = await stub.bulkMailFinish(jobId, claim.token, claim.entries.map(({ index }) => ({
+        index, outcome: "unknown", reason: "connection-lost", newId: null,
+      })));
+      return { ...settled, executionError: toErrorCategory(err).category };
+    }
+    const results = claim.entries.map(({ index, entry }, position) => {
+      if (!outcome.applied) {
+        // Whole-list fingerprint refusal is proven to precede every write.
+        // Only unchanged entries can remain pending under this approval.
+        return { index, outcome: "not_copied", reason: outcome.refusal === "changed-since-preview" && !outcome.changedUids.includes(entry.i)
+          ? "not-attempted" : outcome.refusal, newId: null };
+      }
+      const result = outcome.results[position]!;
+      return { index, outcome: result.outcome, reason: result.reason,
+        newId: result.newUid !== null && result.destinationUidValidity !== null
+          ? encodeMessageId({ mailbox: destinationMailbox, uidValidity: result.destinationUidValidity, uid: result.newUid }) : null };
+    });
+    return stub.bulkMailFinish(jobId, claim.token, results);
+  });
+}
+
+function bulkMailResult(value: unknown): ToolResult {
+  return { content: [{ type: "text", text: JSON.stringify(value) }] };
 }
 
 /** The per-message tally a did-tense line is built from. */
@@ -4026,4 +4118,47 @@ export function registerMailTools(
       }
     },
   );
+}
+
+/** Bulk control calls deliberately do not trigger background recall work. */
+export function registerBulkMailTools(server: McpServer, mail: LeasedMail, principal: Promise<Principal>): void {
+  server.registerTool("mail_bulk_preview", {
+    description: `Preview up to ${BULK_MAIL_CONFIRM_SET_MAX} exact emails from one folder for a resumable move, archive or trash job. Writes no mail. Show the confirmationLine to the user and obtain approval before mail_bulk_job start. ${UNTRUSTED_NOTICE}`,
+    inputSchema: z.object({
+      ids: z.array(z.string()).min(1).max(BULK_MAIL_CONFIRM_SET_MAX),
+      destination: z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("folder"), id: z.string() }),
+        z.object({ kind: z.literal("role"), role: z.enum(["archive", "trash"]) }),
+      ]),
+    }),
+  }, async ({ ids, destination }) => {
+    try {
+      const actor = await principal;
+      const refs = ids.map(decodeMessageId);
+      const refused = moveListRefusal(ids, refs, BULK_MAIL_CONFIRM_SET_MAX);
+      if (refused !== null) return refused;
+      const target: MoveDestination = destination.kind === "folder"
+        ? { kind: "folder", mailbox: decodeFolderId(destination.id).mailbox } : destination;
+      return await withMailConfirmationBoundary(() => buildMovePreview(actor, mail,
+        { ids, refs, destinationId: destination.kind === "folder" ? destination.id : null }, target, "move", true));
+    } catch (err) { return mailErrorResult(err); }
+  });
+
+  server.registerTool("mail_bulk_job", {
+    description: "Start, advance, inspect or cancel an approved bulk mail job. Start takes the bulk preview's unaltered confirmation and change, saves its exact scope, and changes no mail. Each step advances one bounded batch; repeat steps only while status is pending and pending remains. Stop on canceled, expired, busy, executionError or error results. Status is safe after a lost response. Never restart or re-preview ambiguous/copied outcomes to retry them: inspect those messages first. Jobs expire after 24 hours. Cancel stops future claims; an already-running batch may finish. Trash remains recoverable. No action runs automatically.",
+    inputSchema: z.discriminatedUnion("action", [
+      z.object({ action: z.literal("start"), confirmToken: z.string(), change: z.object({ op: z.literal("move"), ids: z.array(z.string()).min(1).max(BULK_MAIL_CONFIRM_SET_MAX), destination: z.string() }) }),
+      z.object({ action: z.literal("step"), jobId: z.string().uuid() }),
+      z.object({ action: z.literal("status"), jobId: z.string().uuid(), offset: z.number().int().min(0).default(0), limit: z.number().int().min(1).max(100).default(100) }),
+      z.object({ action: z.literal("cancel"), jobId: z.string().uuid() }),
+    ]),
+  }, async (request) => {
+    try {
+      const actor = await principal;
+      if (request.action === "start") return bulkMailResult(await withMailConfirmationBoundary(() => startBulkMailJob(actor, request.confirmToken, request.change)));
+      if (request.action === "step") return bulkMailResult(await stepBulkMailJob(actor, mail, request.jobId));
+      if (request.action === "cancel") return bulkMailResult(await agentFor(actor).bulkMailCancel(request.jobId));
+      return bulkMailResult(await agentFor(actor).bulkMailStatus(request.jobId, request.offset, request.limit));
+    } catch (err) { return mailErrorResult(err); }
+  });
 }

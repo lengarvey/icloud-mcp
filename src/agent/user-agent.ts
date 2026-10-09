@@ -65,6 +65,7 @@
 //
 // This module logs nothing (./.claude/CLAUDE.md §4).
 
+import { createBulkMailJob, claimBulkMailJob, finishBulkMailJob, getBulkMailJob, cancelBulkMailJob } from "./mail-bulk";
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env";
 import {
@@ -415,6 +416,24 @@ function isLive(record: unknown, now: number): boolean {
  * `private` says, and never an instance property.
  */
 export class UserAgent extends DurableObject<Env> {
+  // These records are inert progress for a user-approved exact set, not rules.
+  // Each RPC commits all pages atomically before the caller can touch mail.
+  bulkMailCreate(value: unknown) {
+    return this.ctx.storage.transactionSync(() => createBulkMailJob(this.ctx.storage.kv, value, Date.now()));
+  }
+  bulkMailClaim(jobId: unknown) {
+    return this.ctx.storage.transactionSync(() => claimBulkMailJob(this.ctx.storage.kv, jobId, Date.now()));
+  }
+  bulkMailFinish(jobId: unknown, token: unknown, results: unknown) {
+    return this.ctx.storage.transactionSync(() => finishBulkMailJob(this.ctx.storage.kv, jobId, token, results, Date.now()));
+  }
+  bulkMailStatus(jobId: unknown, offset = 0, limit = 100) {
+    return this.ctx.storage.transactionSync(() => getBulkMailJob(this.ctx.storage.kv, jobId, Date.now(), offset, limit));
+  }
+  bulkMailCancel(jobId: unknown) {
+    return this.ctx.storage.transactionSync(() => cancelBulkMailJob(this.ctx.storage.kv, jobId, Date.now()));
+  }
+
   // Every member below that is not an RPC method is an arrow-function instance
   // property. Workers RPC exposes every prototype method, whatever TypeScript's
   // `private` says, and never an instance property. So the store seam, the

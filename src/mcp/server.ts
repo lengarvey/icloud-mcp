@@ -20,7 +20,7 @@ import { registerChangesTool } from "./tools/changes";
 import { registerContactsTools } from "./tools/contacts";
 import { registerDavDiagnoseTool } from "./tools/dav-diagnose";
 import { registerDiagnoseTool } from "./tools/diagnose";
-import { registerMailTools } from "./tools/mail";
+import { registerBulkMailTools, registerMailTools } from "./tools/mail";
 import { registerRecallBackfillTool, registerRecallTools } from "./tools/recall";
 import { registerRulesTools } from "./tools/rules";
 import { registerSaveTool } from "./tools/save";
@@ -161,6 +161,9 @@ export function createServerFactory(
     // environment. It cannot reach a socket or a DAV host, which is exactly why
     // it needs neither.
     registerAccountTool(server, principal);
+    // Status/cancel must never trigger a recall session; steps already own
+    // their entire bounded request budget.
+    registerBulkMailTools(server, leasedMail, principal);
     // The three mail registrars, each handed the DRIVEN server. The parameter
     // is named `server` on purpose, so each registration below reads exactly as
     // it did before the build was driven, and the one line after this block is

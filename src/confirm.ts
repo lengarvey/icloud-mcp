@@ -415,10 +415,11 @@ export interface ConfirmPayloadBase {
  * written once rather than widened each time a phase lands.
  *
  * `"dav"` is one CalDAV or CardDAV OBJECT; `"col"` is a DAV COLLECTION;
- * `"mail"` is one message in one mailbox; `"rule"` is one autonomy rule about to
- * be added to the person's own object (Phase 28).
+ * `"mail"` is one bounded set of messages in one mailbox; `"mail-bulk"` is a
+ * larger immutable scope to start a caller-driven job. `"rule"` is one autonomy
+ * rule about to be added to the person's own object (Phase 28).
  */
-export type ConfirmTarget = "dav" | "col" | "mail" | "rule";
+export type ConfirmTarget = "dav" | "col" | "mail" | "mail-bulk" | "rule";
 
 /** A confirmation naming ONE CalDAV or CardDAV object. */
 export interface DavObjectConfirmPayload extends ConfirmPayloadBase {
@@ -692,6 +693,12 @@ export interface DavCollectionConfirmPayload extends ConfirmPayloadBase {
 export const MAIL_CONFIRM_SET_MAX = 25;
 
 /**
+ * The most messages a resumable bulk preview names. This is a scope bound,
+ * never permission to exceed the separate per-session move bound.
+ */
+export const BULK_MAIL_CONFIRM_SET_MAX = 1000;
+
+/**
  * One message in a mail confirmation's set: its UID and the fingerprint the
  * preview read.
  */
@@ -836,6 +843,20 @@ export interface MailConfirmPayload extends ConfirmPayloadBase {
 }
 
 /**
+ * A reviewed, immutable scope for a caller-driven bulk move.
+ *
+ * Its separate target prevents either kind of mail confirmation being spent
+ * by the other's commit path, even though their scope fields and change hash
+ * are shared. The ordinary mail arm keeps its original bound. A bulk token
+ * starts one durable job; it does not authorise an unbounded mail session.
+ * Existing token meanings are unchanged, so no format-version bump is needed.
+ */
+export interface MailBulkConfirmPayload extends Omit<MailConfirmPayload, "t"> {
+  t: "mail-bulk";
+  k: "move";
+}
+
+/**
  * What a confirmation carries, sealed — one arm per kind of target.
  *
  * A union rather than one interface with optional fields, and the difference is
@@ -847,6 +868,7 @@ export type ConfirmPayload =
   | DavObjectConfirmPayload
   | DavCollectionConfirmPayload
   | MailConfirmPayload
+  | MailBulkConfirmPayload
   | RuleConfirmPayload;
 
 /**
@@ -2737,7 +2759,10 @@ function isConfirmPayload(value: unknown): value is ConfirmPayload {
   if ((candidate.k === "rule") !== (candidate.t === "rule")) return false;
   if (candidate.t === "dav") return hasDavObjectArm(candidate);
   if (candidate.t === "col") return hasDavCollectionArm(candidate);
-  if (candidate.t === "mail") return hasMailArm(candidate);
+  if (candidate.t === "mail") return hasMailArm(candidate, MAIL_CONFIRM_SET_MAX);
+  if (candidate.t === "mail-bulk") {
+    return candidate.k === "move" && hasMailArm(candidate, BULK_MAIL_CONFIRM_SET_MAX);
+  }
   if (candidate.t === "rule") return hasRuleArm(candidate);
   return false;
 }
@@ -2885,7 +2910,7 @@ function hasDavCollectionArm(candidate: Record<string, unknown>): boolean {
 const DECIMAL_DIGITS = /^[0-9]+$/;
 
 /** The fields `MailConfirmPayload` adds, and the ones it must NOT carry. */
-function hasMailArm(candidate: Record<string, unknown>): boolean {
+function hasMailArm(candidate: Record<string, unknown>, setMax: number): boolean {
   return (
     typeof candidate.m === "string" &&
     // Non-empty, for `b`'s stated reason one arm over: an empty token is the
@@ -2911,7 +2936,7 @@ function hasMailArm(candidate: Record<string, unknown>): boolean {
     // The destination's role: one of three values, present, never absent.
     (candidate.qr === null || candidate.qr === "archive" || candidate.qr === "trash") &&
     "qr" in candidate &&
-    hasMailSet(candidate.l) &&
+    hasMailSet(candidate.l, setMax) &&
     // And none of the DAV arms' fields. The mail arm shares no field with
     // either of them, so a payload carrying one is a payload that could be read
     // under two arms, which is the thing the discriminator exists to forbid.
@@ -2930,12 +2955,13 @@ function hasMailArm(candidate: Record<string, unknown>): boolean {
 
 /**
  * Whether a mail confirmation's message list is well formed: 1 to
- * `MAIL_CONFIRM_SET_MAX` entries, no two with the same UID, and every entry
- * carrying the single-message arm's own refusals.
+ * the target's own bound of entries, no two with the same UID, and every entry
+ * carrying the single-message arm's own refusals. The caller chooses the bound
+ * from a server constant, never from a payload field.
  */
-function hasMailSet(list: unknown): boolean {
+function hasMailSet(list: unknown, setMax: number): boolean {
   if (!Array.isArray(list)) return false;
-  if (list.length === 0 || list.length > MAIL_CONFIRM_SET_MAX) return false;
+  if (list.length === 0 || list.length > setMax) return false;
   const seen = new Set<number>();
   for (const entry of list) {
     if (typeof entry !== "object" || entry === null) return false;
