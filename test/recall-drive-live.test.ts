@@ -1,8 +1,8 @@
 // The real recall step after a real tool call (Phase 26, RCLL-08; D-26, D-29,
 // D-35).
 //
-// Everything here is real except the socket: the real server factory, the real
-// seam, the real step, the real person's object and the real connection lease.
+// The server factory, seam, step, object and connection lease are real.
+// Sockets and the optional indexing bindings are fakes.
 // The socket module is mocked for this file only and hands out scripted
 // conversations, so nothing signs in to a real Apple ID.
 //
@@ -20,6 +20,24 @@ vi.mock("../src/mail/socket", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/mail/socket")>()),
   connectImap: vi.fn(),
 }));
+
+// Default deployments no longer provision AI/Vectorize. This opt-in integration
+// suite supplies inert fake indexing dependencies rather than requiring remote
+// resources just to construct the production step's dependency object.
+vi.mock("../src/recall/pipeline", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../src/recall/pipeline")>();
+  const { createEmbedder } = await import("../src/recall/embed");
+  const { createRecallStore } = await import("../src/recall/index");
+  const { createFakeAi } = await import("./fixtures/fake-embedder");
+  const { createFakeVectorize } = await import("./fixtures/fake-vectorize");
+  return {
+    ...original,
+    recallDeps: () => ({
+      embedder: createEmbedder(createFakeAi()),
+      store: createRecallStore(createFakeVectorize()),
+    }),
+  };
+});
 
 import { getOAuthApi } from "@cloudflare/workers-oauth-provider";
 import { AUTONOMY_CLIENT_ID } from "../src/agent/autonomy-client";

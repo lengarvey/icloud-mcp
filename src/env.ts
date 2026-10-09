@@ -14,6 +14,9 @@ import type { UserAgent } from "./agent/user-agent";
 declare global {
   namespace Cloudflare {
     interface Env {
+      /** Exact ChatGPT OAuth callback URIs as JSON; absent uses the stable callback. */
+      CHATGPT_REDIRECT_URIS?: string;
+
       /**
        * Token, grant, and client storage for the OAuth provider.
        *
@@ -244,12 +247,10 @@ declare global {
        * store's factory, and the pool is set so that a call through the real
        * binding fails rather than reaching the account.
        *
-       * Typed `Vectorize`, NOT `... | undefined`, for the reason spelled out on
-       * `DAV_CACHE` above: a binding declared in config either resolves at
-       * deploy time or fails the deploy. The index itself is account state the
-       * owner creates by hand; wrangler.jsonc says why.
+       * Optional: default deployments do not provision recall. Keep this binding
+       * while previously indexed vectors still need retention/revocation cleanup.
        */
-      RECALL_INDEX: Vectorize;
+      RECALL_INDEX?: Vectorize;
 
       /**
        * Workers AI, used for one thing: turning text into the vectors the
@@ -258,9 +259,12 @@ declare global {
        * Read by ONE module under `src/`: `src/recall/embed.ts`, which also holds
        * the one model id. Tests pass a fake to that module's factory instead.
        *
-       * Typed non-optional for the reason given on the binding above.
+       * Optional: needed only when semantic recall is explicitly enabled.
        */
-      AI: Ai;
+      AI?: Ai;
+
+      /** Explicit opt-in for semantic indexing. Only the string "true" enables it. */
+      RECALL_ENABLED?: string;
 
       /**
        * The Cloudflare account id. A Worker var declared in wrangler.jsonc, not

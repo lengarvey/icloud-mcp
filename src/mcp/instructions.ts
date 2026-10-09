@@ -71,6 +71,10 @@
  * is the one payload in this tree with no schema to normalise it, so it gets no
  * typographic characters that could arrive mangled.
  */
+const RECALL_INSTRUCTIONS = `Two tools find mail, and their empty answers mean different things. \`mail_find\` is exhaustive in the one folder it searches, so an empty answer means no such mail is there. \`mail_recall\` finds recent mail by meaning. It is ranked and best-effort, so an empty answer means nothing scored high enough, never that no such mail exists. It returns message ids and subjects only; open results with \`mail_get_message\`.
+
+\`mail_recall_backfill\` fills the person's own recall index faster than ordinary mail use does. Call it only when the person asks you to build or fill their recall index, and only while they are here. Each call reads up to 10 pages of recent inbox and archive mail and says how far the build has got; tell the person that line. Call it again when the answer says to continue. Stop when an answer says the index is built, or says to stop.`;
+
 export const SERVER_INSTRUCTIONS = `One person's iCloud mail, calendar and contacts, reached as the account this connection signed in as. \`account_whoami\` says which account that is.
 
 ## Boundaries
@@ -123,9 +127,7 @@ There is no tool that edits a draft. To revise one, write the new version first,
 
 \`rules_list\`, \`rules_add\`, \`rules_commit\`, \`rules_remove\` and \`rules_test\` manage the user's own rules, which run on their own every 15 minutes with nobody present. With no rules nothing runs. A rule can only flag a message or place a draft reply to its sender, and adding one is previewed by \`rules_add\` and happens only through \`rules_commit\`.
 
-Two tools find mail, and their empty answers mean different things. \`mail_find\` is exhaustive in the one folder it searches, so an empty answer means no such mail is there. \`mail_recall\` finds recent mail by meaning. It is ranked and best-effort, so an empty answer means nothing scored high enough, never that no such mail exists. It returns message ids and subjects only; open results with \`mail_get_message\`.
-
-\`mail_recall_backfill\` fills the person's own recall index faster than ordinary mail use does. Call it only when the person asks you to build or fill their recall index, and only while they are here. Each call reads up to 10 pages of recent inbox and archive mail and says how far the build has got; tell the person that line. Call it again when the answer says to continue. Stop when an answer says the index is built, or says to stop.
+${RECALL_INSTRUCTIONS}
 
 Calendar EVENTS can be created, updated and deleted, through the preview-and-commit shape above.
 
@@ -144,3 +146,13 @@ An update replaces the WHOLE card -- CardDAV has no partial update. This server 
 ## When a call says the password was rejected
 
 The fix is to sign in again: reconnect this server in your client. Retrying will not help, and further attempts pause for about fifteen minutes. \`mail_imap_diagnose\` and \`dav_diagnose\` keep answering during that pause and will say why.`;
+
+/** Only advertise recall tools when the deployment has explicitly enabled them. */
+export function serverInstructions(recall: boolean): string {
+  return recall
+    ? SERVER_INSTRUCTIONS
+    : SERVER_INSTRUCTIONS.replace(
+        RECALL_INSTRUCTIONS,
+        "`mail_find` searches one mail folder exhaustively. Semantic recall and automatic indexing are disabled on this server.",
+      );
+}

@@ -111,6 +111,8 @@
 // value now all live at ALLOWED_REDIRECT_ORIGINS below.
 // ---------------------------------------------------------------------------
 
+import { env as ambientEnv } from "cloudflare:workers";
+import { recallEnabled } from "../recall/config";
 import { AuthorizationError } from "@cloudflare/workers-oauth-provider";
 import type {
   ClientInfo,
@@ -141,6 +143,7 @@ import {
   AUTONOMY_NOTICE_FIELD,
   AUTONOMY_NOTICE_VERSION,
   RECALL_NOTICE,
+  RECALL_DISABLED_NOTICE,
   RESPONSE_HEADERS,
   SOURCE_REFUSAL_BODY,
   renderForm,
@@ -942,6 +945,48 @@ export function isAllowedRedirectOrigin(origin: string | null): boolean {
 }
 
 /**
+ * ChatGPT callbacks are exact URIs, never an origin wildcard. Copy the URI
+ * displayed in MCP management into CHATGPT_REDIRECT_URIS (a JSON array).
+ * An absent setting admits the documented stable callback. An explicit array
+ * replaces that default; an empty or malformed setting admits no ChatGPT URI.
+ * Claude and native loopback clients retain their existing origin policy.
+ *
+ * The ambient binding keeps registration, authorization and the page's CSP on
+ * one policy even though the provider's registration hook receives no env.
+ * The optional value is a pure-test seam, not a second production policy.
+ */
+export function isAllowedRedirectUri(
+  uri: string,
+  configured: string | undefined = ambientEnv.CHATGPT_REDIRECT_URIS,
+): boolean {
+  try {
+    const parsed = new URL(uri);
+    // Reject userinfo, fragments (including empty ones), and characters the
+    // URL parser would silently normalize before the policy sees them.
+    if (
+      parsed.username || parsed.password || uri.includes("#") ||
+      /[\s\\]/.test(uri) || /^[^:]+:\/\/[^/?#]*@/.test(uri)
+    ) return false;
+
+    if (isAllowedRedirectOrigin(parsed.origin)) return true;
+    if (parsed.origin !== "https://chatgpt.com") return false;
+
+    const callbacks: unknown = configured === undefined
+      ? ["https://chatgpt.com/connector_platform_oauth_redirect"]
+      : JSON.parse(configured);
+    if (!Array.isArray(callbacks)) return false;
+    // Validate the whole setting, so a typo never quietly widens the policy.
+    if (!callbacks.every((callback: unknown) => {
+      if (typeof callback !== "string") return false;
+      return /^https:\/\/chatgpt\.com\/(?:connector_platform_oauth_redirect|connector\/oauth\/[A-Za-z0-9_-]+)$/.test(callback);
+    })) return false;
+    return callbacks.includes(uri);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The entire description served when a registration is refused (LIFE-02).
  *
  * Exported for the reason `UNCONFIGURED_BODY` is: so the test asserts the value
@@ -1022,7 +1067,7 @@ export const MAX_REGISTRATION_BYTES = 8192;
  *
  * ONE RULE, TWO CALL SITES. The authorize page and the registration endpoint
  * ask the same question — will this server ever send a code to that address —
- * so this reuses the same `isAllowedRedirectOrigin(originOf(uri))` expression
+ * so this reuses the same `isAllowedRedirectUri(uri)` expression
  * `refusedRedirectResponse` uses. A second junk heuristic written here would
  * drift from the first, and then one of the two would be wrong.
  *
@@ -1040,8 +1085,9 @@ export const MAX_REGISTRATION_BYTES = 8192;
  * `ALLOWED_REDIRECT_ORIGINS` above and deploy. That is the same fix the
  * authorize refusal already documents, and nothing stored has to change.
  *
- * ORIGIN-ONLY MATCHING, AND WHAT THAT DOES NOT BOUND (IN-04). Both this gate and
- * the consent screen reduce a redirect URI to its origin, deliberately: a long
+ * CLAUDE ORIGIN MATCHING, AND WHAT THAT DOES NOT BOUND (IN-04). Claude
+ * callbacks retain their original origin policy. The consent screen also
+ * reduces every redirect URI to its origin, deliberately: a long
  * attacker-chosen path would push the origin itself out of view on the screen
  * where the user is deciding. The consequence is that `https://claude.ai/anything`
  * registers successfully and displays on the consent screen identically to the
@@ -1050,7 +1096,8 @@ export const MAX_REGISTRATION_BYTES = 8192;
  * matching paths. It is written down because a client record no longer expires,
  * so such a registration is permanent where it used to age out — and because a
  * later reader could otherwise conclude the origin gate bounds the destination
- * exactly. It does not. It bounds the ORIGIN exactly.
+ * exactly. For Claude it bounds the ORIGIN exactly. ChatGPT callbacks instead
+ * require exact URI membership through CHATGPT_REDIRECT_URIS.
  *
  * IT NEVER THROWS. `clientMetadata` is the RAW JSON body a stranger posted, and
  * a throw here becomes a 500 whose description is the error's own message —
@@ -1059,8 +1106,9 @@ export const MAX_REGISTRATION_BYTES = 8192;
  * That is the same never-throw shape `servesThisGrant` uses in
  * `src/mcp/api-handler.ts`, for the same reason.
  *
- * The callback is handed no environment, so it cannot reach a store or a
- * limiter. That is fine for a question about an origin.
+ * The callback is handed no environment. The URI predicate reads the ambient
+ * callback setting, shared with authorization and the page headers; no store
+ * or limiter is consulted.
  */
 export function refuseUnlistedRedirects(
   options: ClientRegistrationCallbackOptions,
@@ -1080,7 +1128,7 @@ export function refuseUnlistedRedirects(
       uris.length > 0 &&
       uris.every(
         (uri: unknown) =>
-          typeof uri === "string" && isAllowedRedirectOrigin(originOf(uri)),
+          typeof uri === "string" && isAllowedRedirectUri(uri),
       );
 
     // A SIZE BOUND, and the redirect gate is not one. The registration endpoint
@@ -1244,7 +1292,7 @@ Refused destination: ${destination}
 
 Existing authorizations are unaffected. This check gates /authorize only — token refresh is served by the OAuth token endpoint and never reaches it — so a client that already holds a token keeps working. Nothing has been revoked and the server is not down.
 
-If that destination is genuinely yours, add its origin to ALLOWED_REDIRECT_ORIGINS in src/auth/login-handler.ts and deploy. The allowlist is a source constant rather than stored state, so nothing saved has to be edited or deleted to recover.`;
+For ChatGPT, copy the exact callback URI shown in MCP management into the CHATGPT_REDIRECT_URIS JSON array setting and deploy. Never add the entire ChatGPT origin. For other clients, if that destination is genuinely yours, add its origin to ALLOWED_REDIRECT_ORIGINS in src/auth/login-handler.ts and deploy. These checks use source constants and deployment settings rather than stored client state, so no saved clients or grants need to be deleted to recover.`;
 }
 
 /**
@@ -1277,7 +1325,7 @@ If that destination is genuinely yours, add its origin to ALLOWED_REDIRECT_ORIGI
  * the secret, and a refused destination is not one.
  */
 function refusedRedirectResponse(redirectUri: string): Response | null {
-  if (isAllowedRedirectOrigin(originOf(redirectUri))) return null;
+  if (isAllowedRedirectUri(redirectUri)) return null;
 
   return new Response(refusedRedirectBody(displayDestination(redirectUri)), {
     status: 403,
@@ -1459,11 +1507,13 @@ export const loginHandler = createLoginHandler();
  * the same predicate the arming uses, and this is the one place the list is
  * built, so the page and the arming cannot disagree. The page renders the
  * autonomy notice's hidden field exactly when the notice is in this list. The
- * recall notice is always first and always present, because recall is
- * inherent: it does not depend on any setting.
+ * recall notice is first when recall is explicitly enabled. With recall off,
+ * the page must not claim that mail will be copied into the search index.
  */
 export function signInNotices(env: Env): readonly SignInNotice[] {
-  return autonomyConfigured(env) ? [RECALL_NOTICE, AUTONOMY_NOTICE] : [RECALL_NOTICE];
+  const notices: SignInNotice[] = [recallEnabled(env) ? RECALL_NOTICE : RECALL_DISABLED_NOTICE];
+  if (autonomyConfigured(env)) notices.push(AUTONOMY_NOTICE);
+  return notices;
 }
 
 /**

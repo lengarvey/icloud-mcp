@@ -72,7 +72,11 @@ using a canary tool.
 The `/authorize` form asks for an Apple ID and an app-specific password. It
 checks the address against a two-source allow list, proves the credential
 against Apple with exactly **one** IMAP login, and only redirects to an
-allowlisted origin.
+allowlisted origin (Claude/loopback) or an exact configured ChatGPT callback
+URI. ChatGPT redirects require HTTPS on exactly `chatgpt.com`; lookalike hosts,
+credentials, queries and fragments are refused. Every redirect must also match
+the client registration. S256 PKCE remains required for public clients;
+confidential clients retain the provider's existing authentication policy.
 
 Every refusal is held to a floor of about three seconds, counted from the first
 statement of the request. That is deliberate: a wrong password, an address that
@@ -177,16 +181,25 @@ another person's session.
 
 ### Recall keeps a searchable copy of your recent mail
 
-Recall is inherent. Every person who signs in has their recent mail indexed, so
-Claude can find a message by what it was about. There is no switch to turn it on
-or off. The sign-in page says so, above the sign-in fields, before anyone types
-anything.
+Recall is **off by default**. Only the exact config value `RECALL_ENABLED="true"`
+enables it. With it off, ordinary mail operations do not invoke Workers AI or
+Vectorize and do not index mail; the recall and backfill tools are absent.
+The sign-in page states whether indexing is enabled before anyone types anything.
+The default deployment needs neither an AI binding nor a Vectorize index.
+
+When enabled, recall indexes recent mail for each signed-in person so the
+assistant can find a message by its meaning. The rest of this section describes
+that optional mode. Turning it off stops indexing/search, but does not erase
+previously stored data. Keep the bindings for deletion-only expiry/revocation
+cleanup until the existing index has been removed.
 
 **What is kept.** For each message in the inbox and the archive folder from the
 last 90 days: its subject line, and a numeric fingerprint made from the subject,
 the sender's name and the first lines of the body. The message text itself is
 never kept. The text used to make the fingerprint is sent to the embedding
-model, and then thrown away.
+Cloudflare Workers AI model, and then thrown away. The vector store is
+Cloudflare Vectorize. Ordinary requested mail, calendar and contact content is
+still returned to the connected assistant when recall is disabled.
 
 **Where.** In the person's own partition of the vector store, and in a ledger
 in their own Durable Object. Every read and write of the index is scoped to the

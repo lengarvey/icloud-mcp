@@ -5873,7 +5873,7 @@ export function checkCommitHook(hookPath = ".husky/pre-commit") {
       ),
     );
   }
-  if (!contents.includes("dev.vars")) {
+  if (!/node\s+scripts\/secret-files\.mjs\s+--staged\b/.test(contents)) {
     violations.push(
       violation(
         "commit-gate-missing-secrets-check",

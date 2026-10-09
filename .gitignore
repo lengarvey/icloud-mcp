@@ -2,7 +2,15 @@ node_modules
 .wrangler
 dist
 .dev.vars
+.dev.vars.*
 .env
+.env.*
+# Only sanitized example templates may be tracked. The commit gate verifies
+# that their assignments are empty; never put real values in these templates.
+!.dev.vars.example
+!.dev.vars.*.example
+!.env.example
+!.env.*.example
 .DS_Store
 
 # Your live Worker config, holding your Cloudflare account id, KV namespace

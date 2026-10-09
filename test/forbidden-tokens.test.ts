@@ -6316,7 +6316,7 @@ describe("the recall store's scan rules (Phase 25, D-17)", () => {
         "src/env.ts",
       ].flatMap((file) => collectAiBindingReads(file, rawSourceOf(file)));
       expect(collected.map((reader) => reader.file)).toEqual([AI_BINDING_OWNER]);
-      expect(rawSourceOf("src/env.ts")).toMatch(/\bAI: Ai;/);
+      expect(rawSourceOf("src/env.ts")).toMatch(/\bAI\?: Ai;/);
     });
 
     it("reports a second reader as the duplicate, and the owner missing when none reads it", () => {

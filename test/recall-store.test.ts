@@ -154,8 +154,8 @@ describe("recall tracer: one message in, the same message out (plan 25-01)", () 
   it(
     "never reaches the account: calls through the pool's own vector and AI bindings both reject",
     async () => {
-      await expect((async () => env.RECALL_INDEX.describe())()).rejects.toBeDefined();
-      await expect((async () => env.AI.run(RECALL_MODEL, { text: ["x"] }))()).rejects.toBeDefined();
+      await expect((async () => env.RECALL_INDEX!.describe())()).rejects.toBeDefined();
+      await expect((async () => env.AI!.run(RECALL_MODEL, { text: ["x"] }))()).rejects.toBeDefined();
     },
     10_000,
   );

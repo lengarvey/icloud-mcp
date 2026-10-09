@@ -81,9 +81,9 @@ export const TOOL_GROUPS = Object.freeze([
       ["mail_find",
         "Search one folder by keyword, sender, and date range. Exhaustive in that folder: an empty answer means no such mail is there."],
       ["mail_recall",
-        "Find recent mail by meaning. Ranked and best-effort: an empty answer means nothing scored high enough, not that no such mail exists. Returns message ids and subjects only; open one with `mail_get_message`. It searches a copy of your recent mail this server keeps for everyone who signs in; [SECURITY.md](SECURITY.md#recall-keeps-a-searchable-copy-of-your-recent-mail) says what is kept and for how long."],
+        "Find recent mail by meaning. Ranked and best-effort: an empty answer means nothing scored high enough, not that no such mail exists. Returns message ids and subjects only; open one with `mail_get_message`. Available only when the operator enables recall (off by default). It searches a copy of your recent mail the enabled server keeps; [SECURITY.md](SECURITY.md#recall-keeps-a-searchable-copy-of-your-recent-mail) says what is kept and for how long."],
       ["mail_recall_backfill",
-        "Fill your own recall index in one sitting, while you watch. Each call indexes up to 10 pages of 25 messages of recent inbox and archive mail, one page at a time. A 20-second time limit usually stops it after 4 or 5 pages, about 100 to 125 messages. It says how far it has got. Call again until it says the index is built. It takes no arguments and only ever fills your own index."],
+        "Available only when recall is enabled (off by default). Fill your own recall index in one sitting, while you watch. Each call indexes up to 10 pages of 25 messages of recent inbox and archive mail, one page at a time. A 20-second time limit usually stops it after 4 or 5 pages, about 100 to 125 messages. It says how far it has got. Call again until it says the index is built. It takes no arguments and only ever fills your own index."],
       ["mail_get_message",
         "Read one message in full by opaque id."],
       ["mail_mark_read",
@@ -235,10 +235,15 @@ export function rowNames(groups) {
 
 /** README's whole tool block: the count line, then each group's table. */
 export function renderBlock(groups) {
-  const count = rowNames(groups).length;
+  const names = rowNames(groups);
+  const count = names.length;
+  const optionalCount = names.filter((name) => name === "mail_recall" || name === "mail_recall_backfill").length;
+  const recallNote = optionalCount > 0
+    ? ` when recall is enabled; ${count - optionalCount} by default (recall is off)`
+    : "";
   const word = COUNT_WORDS[groups.length] ?? String(groups.length);
   const parts = [
-    `${count} tools in ${word} groups. Each tool that returns message, event or contact\n` +
+    `${count} tools in ${word} groups${recallNote}. Each tool that returns message, event or contact\n` +
       "text says in its description that the text is untrusted. Event titles, message\n" +
       "bodies and contact fields are data, never instructions.\n",
   ];

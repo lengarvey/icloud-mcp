@@ -118,7 +118,7 @@ auth code. When it needs mail, it calls this Worker's own `/mcp` through the
    the connection closes. A second call for the same person while the lease is
    held is refused at once, not queued.
 
-7. **The recall step.** After a mail, recall or change tool answers without an
+7. **The optional recall step.** When recall is enabled, after a mail, recall or change tool answers without an
    error, one recall build step runs for that person, and then the same
    answer goes back. The step takes the lease itself, after the tool's session
    has closed. It is silent: a refusal or failure never reaches the answer.
@@ -253,6 +253,7 @@ tool; this map does not repeat it.
 
 | File | Role |
 |------|------|
+| `config.ts` | Strict deployment opt-in: only RECALL_ENABLED="true" enables indexing and recall tools. |
 | `index.ts` | **The only module that may name the vector index binding.** Every read and write takes the principal and sets the namespace and filter from it. |
 | `embed.ts` | **The only reader of the AI binding, and the one model id.** Text → vectors. |
 | `ids.ts` | A vector's id: a digest of the user id and the message token. |
@@ -408,8 +409,14 @@ key: it reads the grant id and the arming time, and asks the sign-in store.
 
 ## Recall
 
-Recall is a searchable copy of each person's recent mail. It is inherent: every
-signed-in person's recent inbox and archive mail is indexed, with no switch.
+Recall is an optional searchable copy of each person's recent mail, disabled
+by default. Only `RECALL_ENABLED="true"` enables its tools and drivers. With it
+off, ordinary calls bypass indexing and do not call Workers AI or Vectorize.
+AI and index bindings are optional in the default deployment. Existing ledger
+entries retain deletion-only cleanup; disabling recall does not erase an old
+index, so keep its bindings until that data has been removed.
+
+The following describes enabled recall:
 
 - **The index fails open, so there is one way to it.** A vector-index query with
   no namespace searches everyone's vectors. So `src/recall/index.ts` is the only
@@ -627,8 +634,8 @@ The tracked config is `wrangler.jsonc.example` (all placeholders). The real
 | `ALLOW_LIST_KV` | KV | The stored half of the allow list. |
 | `SAVE_LINK_KV` | KV | Spent save-link marks. |
 | `ATTACHMENT_STAGING` | R2 | Staged and saved attachment copies, under a one-day lifecycle rule. |
-| `RECALL_INDEX` | Vectorize | The recall index. |
-| `AI` | Workers AI | The recall embedding model. |
+| `RECALL_INDEX` | Vectorize (optional) | The opt-in recall index. |
+| `AI` | Workers AI (optional) | The opt-in recall embedding model. |
 | `USER_AGENT` | Durable Object | The per-person `UserAgent` (SQLite storage). |
 | `SELF` | Service | This Worker, for the object's calls to its own `/mcp`. |
 | `LOGIN_IP_LIMITER`, `LOGIN_ID_LIMITER` | Rate limit | Sign-in attempts per address and per Apple ID. |

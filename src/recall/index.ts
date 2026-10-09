@@ -204,5 +204,8 @@ export function createRecallStore(index: Vectorize): RecallStore {
 
 /** The production store, over the real binding. */
 export function recallStore(): RecallStore {
-  return createRecallStore(env.RECALL_INDEX);
+  // Cleanup of existing vectors remains available after indexing is disabled.
+  const index = env.RECALL_INDEX;
+  if (index === undefined) throw new RecallStoreError();
+  return createRecallStore(index);
 }

@@ -11,15 +11,16 @@
     "gen:hostname": "node scripts/write-hostname.mjs",
     "pretypecheck": "node scripts/write-hostname.mjs",
     "typecheck": "tsc --noEmit",
-    "pretest": "node scripts/write-hostname.mjs",
+    "pretest": "node scripts/write-hostname.mjs && node --test scripts/secret-files.test.mjs",
     "test": "vitest run",
     "test:quick": "vitest run --reporter=dot",
     "predeploy": "node scripts/write-hostname.mjs",
     "deploy": "wrangler deploy",
     "smoke": "node scripts/smoke-unauthenticated.mjs",
-    "scan": "node scripts/forbidden-tokens.mjs",
+    "scan": "node scripts/forbidden-tokens.mjs && node scripts/secret-files.mjs --tracked",
     "docs:tools": "node scripts/tool-table.mjs --check",
-    "prepare": "husky && node scripts/write-hostname.mjs"
+    "prepare": "husky && node scripts/write-hostname.mjs",
+    "test:secrets": "node --test scripts/secret-files.test.mjs"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "0.10.3",

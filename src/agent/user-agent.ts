@@ -601,7 +601,8 @@ export class UserAgent extends DurableObject<Env> {
     markDestroyPending(sql);
     clearPageSlot(sql);
     try {
-      await destroyAll(this.ledgerHandle(), this.vectorStore());
+      // Empty objects need no Vectorize binding, including when a grant expires.
+      if (countVectors(sql) > 0) await destroyAll(this.ledgerHandle(), this.vectorStore());
     } catch {
       await this.scheduleAlarm(Date.now() + RECALL_ALARM_RETRY_MS);
       return { ok: false };
@@ -800,7 +801,12 @@ export class UserAgent extends DurableObject<Env> {
         return;
       }
       // 3. Expiry.
-      const more = await sweepExpired(this.ledgerHandle(), this.vectorStore(), Date.now());
+      // No store construction for an empty ledger. Existing indexed data still
+      // receives deletion-only retention/revocation cleanup after opt-out.
+      const more =
+        countVectors(this.ctx.storage.sql) > 0
+          ? await sweepExpired(this.ledgerHandle(), this.vectorStore(), Date.now())
+          : false;
       const next = more
         ? Date.now() + RECALL_SWEEP_AGAIN_MS
         : (earliestExpiry(this.ctx.storage.sql) ?? Date.now() + RECALL_SWEEP_MAX_INTERVAL_MS);
