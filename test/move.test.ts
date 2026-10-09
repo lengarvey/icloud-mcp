@@ -646,6 +646,88 @@ function slowDuplex(script: Uint8Array[], delayMs: number): FakeDuplex {
   return { ...fake, readable };
 }
 
+describe("an absolute move cutoff includes time spent before the session work", () => {
+  it("sends no copy when the cutoff is reached during mailbox open", async () => {
+    const duplex = createFakeDuplex([
+      ...authPrefix(),
+      writableOpen(),
+      fingerprintReply("a5", [ONE]),
+      logoutExchange("a6"),
+    ]);
+    const deadline = 1_800_000_000_100;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() =>
+      wireOf(duplex).some((line) => commandOf(line).word === "SELECT")
+        ? deadline : deadline - 100,
+    );
+    try {
+      const outcome = await runMove(duplex, [ONE], {
+        ...VERB_BOUNDS, writeDeadlineAt: deadline,
+      });
+      const lines = wireOf(duplex);
+      expect(lines).toEqual([...openAndCheckLines([ONE]), "a6 LOGOUT"]);
+      for (const word of CHANGING) expectNoLine(lines, word);
+      expect(outcome).toEqual({
+        applied: true,
+        results: [{
+          uid: ONE.uid, outcome: "not_copied", reason: "not-attempted",
+          newUid: null, destinationUidValidity: null,
+        }],
+      });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it.each(["COPY", "STORE"] as const)(
+    "a cutoff reached during %s prevents every later mutation",
+    async (lastWrite) => {
+      const afterCopy = lastWrite === "COPY";
+      const duplex = createFakeDuplex([
+        ...authPrefix(),
+        writableOpen(),
+        fingerprintReply("a5", [ONE, TWO]),
+        copyReply("a6", ONE.uid, 88),
+        ...(afterCopy ? [] : [markEcho("a7", ONE.uid, "9001")]),
+        logoutExchange(afterCopy ? "a7" : "a8"),
+      ]);
+      const deadline = 1_800_000_000_100;
+      const clock = vi.spyOn(Date, "now").mockImplementation(() =>
+        wireOf(duplex).some((line) => commandOf(line).word === lastWrite)
+          ? deadline : deadline - 100,
+      );
+      try {
+        const outcome = await runMove(duplex, [ONE, TWO], {
+          ...VERB_BOUNDS, writeDeadlineAt: deadline,
+        });
+        const lines = wireOf(duplex);
+        expect(lines).toEqual([
+          ...openAndCheckLines([ONE, TWO]),
+          ...fullMoveLines(6, ONE).slice(0, afterCopy ? 1 : 2),
+          afterCopy ? "a7 LOGOUT" : "a8 LOGOUT",
+        ]);
+        if (afterCopy) expectNoLine(lines, "STORE");
+        expectNoLine(lines, "EXPUNGE");
+        for (const word of CHANGING) expectNoLine(lines, word, TWO.uid);
+        expect(outcome).toEqual({
+          applied: true,
+          results: [
+            {
+              uid: ONE.uid, outcome: "copied_not_removed", reason: "stopped-for-time",
+              newUid: 88, destinationUidValidity: RECEIPTS_UIDVALIDITY,
+            },
+            {
+              uid: TWO.uid, outcome: "not_copied", reason: "not-attempted",
+              newUid: null, destinationUidValidity: null,
+            },
+          ],
+        });
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+});
+
 describe("every way a move can end", () => {
   it("copy answered NO: not_copied, copy-refused, nothing more for it, and the next message still moves", async () => {
     const duplex = createFakeDuplex([

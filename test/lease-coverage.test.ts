@@ -286,6 +286,8 @@ const LEASED: ReadonlyArray<{
   },
   { name: "mail_mark_read", args: { id: MESSAGE_ID, read: true } },
   { name: "mail_flag", args: { id: MESSAGE_ID, flagged: true } },
+  { name: "mail_bulk_preview", args: { ids: [MESSAGE_ID], destination: { kind: "folder", id: FOLDER_ID } } },
+  { name: "mail_bulk_job", args: { action: "step", jobId: "11111111-1111-4111-8111-111111111111" } },
   { name: "mail_move", args: { ids: [MESSAGE_ID], destination: FOLDER_ID } },
   { name: "mail_archive", args: { ids: [MESSAGE_ID] } },
   { name: "mail_trash", args: { ids: [MESSAGE_ID] } },

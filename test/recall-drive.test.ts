@@ -356,6 +356,8 @@ const NOT_MAIL = "not mail: calendar, contacts and DAV tools never run a recall 
 
 /** Every other tool, with the reason it runs no step. */
 const NOT_DRIVEN: ReadonlyArray<{ name: string; reason: string }> = [
+  { name: "mail_bulk_preview", reason: "bulk calls retain the whole bounded request budget" },
+  { name: "mail_bulk_job", reason: "status and cancellation never start background mail work" },
   {
     name: "mail_imap_diagnose",
     reason:

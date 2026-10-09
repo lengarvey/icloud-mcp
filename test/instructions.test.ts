@@ -84,6 +84,8 @@ const EXPECTED_TOOLS: readonly string[] = [
   "contacts_update",
   "dav_diagnose",
   "mail_archive",
+  "mail_bulk_preview",
+  "mail_bulk_job",
   "mail_commit",
   "mail_compose_new",
   "mail_compose_reply",

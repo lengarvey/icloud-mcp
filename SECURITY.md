@@ -506,3 +506,18 @@ Trust portal in front of the endpoint, and the two-step removal whose cost is
 stated above); and issues in third-party
 dependencies that should be reported upstream
 (tell us anyway if they affect this server).
+
+
+## Bulk move progress records
+
+Resumable bulk moves keep an owner-local progress record containing the exact
+opaque message and folder IDs, UID validity, size/date/change-number fingerprints,
+and move outcomes. They contain no message text, email credentials, or confirmation
+tokens. At most eight jobs are retained. A job cannot advance after 24 hours;
+expired records are reclaimed on the next new bulk job. Only the authenticated
+owner's Durable Object is accessed. Status and cancellation do not open a mailbox.
+
+Each approved job has an immutable scope. A durable claim precedes mailbox
+writes, and only messages explicitly not attempted may resume. Unknown results
+and orphaned claims are never replayed. Cancellation stops future batches but
+cannot recall commands already in flight. Bulk jobs never run on their own.
