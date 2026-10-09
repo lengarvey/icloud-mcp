@@ -34,6 +34,24 @@ vi.mock("../src/mail/socket", async (importOriginal) => ({
   connectImap: vi.fn(),
 }));
 
+// Recall is explicitly enabled by the test fixture, but default deployment
+// config no longer provisions its bindings. Supply fakes so the real backfill
+// reaches its lease gate rather than failing during dependency construction.
+vi.mock("../src/recall/pipeline", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../src/recall/pipeline")>();
+  const { createEmbedder } = await import("../src/recall/embed");
+  const { createRecallStore } = await import("../src/recall/index");
+  const { createFakeAi } = await import("./fixtures/fake-embedder");
+  const { createFakeVectorize } = await import("./fixtures/fake-vectorize");
+  return {
+    ...original,
+    recallDeps: () => ({
+      embedder: createEmbedder(createFakeAi()),
+      store: createRecallStore(createFakeVectorize()),
+    }),
+  };
+});
+
 import type { UserAgent } from "../src/agent/user-agent";
 import {
   CONFIRM_TTL_SECONDS,

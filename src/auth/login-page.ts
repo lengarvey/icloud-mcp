@@ -105,7 +105,7 @@ import {
   APP_PASSWORD_FIELD,
   APPLE_ID_FIELD,
   displayDestination,
-  isAllowedRedirectOrigin,
+  isAllowedRedirectUri,
   originOf,
 } from "./login-handler";
 
@@ -123,8 +123,8 @@ import {
  * Null means the bare form. Anything else is interpolated verbatim, which is
  * safe only because of where the value comes from: `responseHeadersFor` is the
  * one caller that passes a non-null one, and it passes nothing that has not
- * already satisfied `isAllowedRedirectOrigin`. That predicate is exact equality
- * against a source constant plus an anchored loopback pattern, so the set of
+ * already satisfied `isAllowedRedirectUri`. It admits exact Claude origins,
+ * exact HTTPS ChatGPT callbacks, and an anchored loopback pattern. The set of
  * strings that can reach this parameter is small, finite, and contains no
  * space, no semicolon and no line break. Header injection is not possible here,
  * and it is not possible because of the validation rather than because of any
@@ -196,7 +196,7 @@ function contentSecurityPolicy(formActionOrigin: string | null): string {
  *
  * So `responseHeadersFor` widens the directive by exactly one origin: the
  * destination this very request is about to be sent to. That is not a new
- * permission. `isAllowedRedirectOrigin(originOf(uri))` has already decided this
+ * permission. `isAllowedRedirectUri(uri)` has already decided this
  * server will deliver an authorization code there, and the page has already
  * NAMED it to the reader in the consent block. Letting the form reach the one
  * origin the form is about is narrower than the reader has already been told.
@@ -244,7 +244,7 @@ export function responseHeadersFor(
   redirectUri: string,
 ): Readonly<Record<string, string>> {
   const origin = originOf(redirectUri);
-  if (origin === null || !isAllowedRedirectOrigin(origin)) {
+  if (origin === null || !isAllowedRedirectUri(redirectUri)) {
     return RESPONSE_HEADERS;
   }
   return {
@@ -429,10 +429,9 @@ const DAY_MS = 86_400_000;
 /**
  * The recall notice: this server keeps a searchable copy of your recent mail.
  *
- * Recall is inherent (owner, 2026-09-27). Every person who signs in has their
- * recent mail indexed, and there is no switch. So this notice is the consent,
- * and it must be read before anyone types a credential. That is why it sits
- * above the fields, on every render, for every client.
+ * Recall requires deployment opt-in. When enabled, this notice is shown above
+ * the fields before anyone types a credential. Disabled deployments show the
+ * separate notice below, so the page describes the active privacy policy.
  *
  * The only copy of these words. The test imports this constant rather than
  * retyping it, so an edit here moves the pin with it, while a stray second copy
@@ -458,6 +457,15 @@ export const RECALL_NOTICE: SignInNotice = {
     "This server also keeps a searchable copy of your recent mail, so Claude can find a message by what it was about.",
     `It keeps each message's subject line and a numeric fingerprint made from the subject, the sender's name and the opening lines, for ${RECALL_TTL_MS / DAY_MS} days. It does not keep the text itself.`,
     "It is deleted within a day of your access ending.",
+  ],
+};
+
+/** The disabled setting still explains the on-demand assistant data flow. */
+export const RECALL_DISABLED_NOTICE: SignInNotice = {
+  heading: "Automatic mail indexing is disabled",
+  lines: [
+    "This deployment does not automatically copy mail into its semantic search index.",
+    "Content requested through this connection is still shared with your connected assistant.",
   ],
 };
 

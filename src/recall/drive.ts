@@ -87,6 +87,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { AUTONOMY_CLIENT_ID } from "../agent/autonomy-client";
+import { recallEnabled } from "./config";
 import type { LeasedMail } from "../agent/lease";
 import type { Principal } from "../principal";
 import {
@@ -136,6 +137,7 @@ export async function runRecallStep(
   grantClient: GrantClient,
 ): Promise<void> {
   try {
+    if (!recallEnabled()) return;
     if (!isPersonClient(await grantClient())) return;
     const actor = await principal;
     await recallStep(actor, productionStepDeps(mail));
@@ -171,6 +173,7 @@ export async function runRecallBackfill(
   depsFor: (mail: LeasedMail) => StepDeps = productionStepDeps,
   beforeRun?: () => Promise<void>,
 ): Promise<BackfillRun> {
+  if (!recallEnabled()) return { kind: "refused" };
   if (!isPersonClient(await grantClient())) return { kind: "refused" };
   if (beforeRun !== undefined) await beforeRun();
   return { kind: "ran", outcome: await recallBackfill(principal, depsFor(mail)) };
@@ -204,6 +207,7 @@ export function withRecallStep(
   mail: LeasedMail,
   grantClient: GrantClient,
 ): McpServer {
+  if (!recallEnabled()) return server;
   const registerTool = (
     name: string,
     config: unknown,

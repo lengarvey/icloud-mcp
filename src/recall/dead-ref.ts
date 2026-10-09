@@ -22,6 +22,7 @@
 // from the caller's own principal, so it can only ever name that person's
 // vector. No logging (./.claude/CLAUDE.md §4).
 
+import { recallEnabled } from "./config";
 import { agentFor } from "../agent/lease";
 import { encodeMessageId, type MessageRef } from "../mail/ids";
 import type { Principal } from "../principal";
@@ -40,6 +41,7 @@ export async function forgetDeadRef(
   ref: MessageRef,
   deps: () => RecallDeps = recallDeps,
 ): Promise<void> {
+  if (!recallEnabled()) return;
   try {
     const id = await vectorIdOf(principal, encodeMessageId(ref));
     const held = await agentFor(principal).recallHolds([id]);

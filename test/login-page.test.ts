@@ -253,6 +253,7 @@ function stubEnv(
 ): Env {
   return {
     ...(options.autonomySecrets ?? {}),
+    RECALL_ENABLED: "true",
     OAUTH_KV: options.kv ?? quietKv(),
     LOGIN_IP_LIMITER: limiter(options.floodRefused !== true),
     LOGIN_ID_LIMITER: limiter(true),
@@ -920,8 +921,8 @@ describe("there are two failure states on the credential path, and no more", () 
   });
 });
 
-describe("the recall notice is above the fields, on every render", () => {
-  // RCLL-13, CONTEXT D-32. Recall is inherent, so this notice is the consent: a
+describe("the enabled recall notice is above the fields, on every render", () => {
+  // RCLL-13, CONTEXT D-32. Recall is explicitly enabled in this fixture, so a
   // person must read what this server keeps before they type a credential. The
   // words are pinned by importing RECALL_NOTICE, never by retyping them.
 
@@ -1095,7 +1096,7 @@ describe("the recall notice is above the fields, on every render", () => {
   });
 
   it("builds the list in one place, and that list is the recall notice alone", () => {
-    expect(signInNotices(emptyEnv())).toEqual([RECALL_NOTICE]);
+    expect(signInNotices({ ...emptyEnv(), RECALL_ENABLED: "true" })).toEqual([RECALL_NOTICE]);
   });
 
   it("puts no notice inside a collapsible disclosure", async () => {
@@ -1118,7 +1119,7 @@ describe("the recall notice is above the fields, on every render", () => {
         "response_type=code&client_id=<script>&state=%3Cb%3E",
         null,
         { name: "<b>Evil & Co</b>", redirectUri: LOOPBACK_REDIRECT },
-        signInNotices(emptyEnv()),
+        signInNotices({ ...emptyEnv(), RECALL_ENABLED: "true" }),
       ).text(),
     );
 
@@ -1188,7 +1189,7 @@ describe("the autonomy notice follows the recall notice, when autonomy is set up
       expect(notices, unset).toEqual([RECALL_NOTICE]);
       expect(notices[0]).toBe(RECALL_NOTICE);
     }
-    expect(signInNotices(emptyEnv())).toEqual([RECALL_NOTICE]);
+    expect(signInNotices({ ...emptyEnv(), RECALL_ENABLED: "true" })).toEqual([RECALL_NOTICE]);
   });
 
   it("shows the recall notice first, unchanged, then every autonomy line in order, above the fields, and the field inside the form", async () => {

@@ -12,7 +12,8 @@ import { createSessionGate } from "../mail/service";
 import { answersDuringPause } from "../password-pause";
 import type { Principal } from "../principal";
 import { type GrantClient, withRecallStep } from "../recall/drive";
-import { SERVER_INSTRUCTIONS } from "./instructions";
+import { recallEnabled } from "../recall/config";
+import { serverInstructions } from "./instructions";
 import { registerAccountTool } from "./tools/account";
 import { registerCalendarTools } from "./tools/calendar";
 import { registerChangesTool } from "./tools/changes";
@@ -67,7 +68,7 @@ export function createServerFactory(
     // names -- see `./instructions.ts` for the measurement that prompted it.
     const server = new McpServer(
       { name: "icloud-mcp", version: "0.1.0" },
-      { instructions: SERVER_INSTRUCTIONS },
+      { instructions: serverInstructions(recallEnabled()) },
     );
     // Request-scoped BY CONSTRUCTION. This factory body runs once per request,
     // so the gate below cannot be shared with another caller — no bookkeeping,

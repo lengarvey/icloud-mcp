@@ -27,17 +27,7 @@ set -e
 #    each violation as `file:line — why` and exits non-zero.
 node scripts/forbidden-tokens.mjs
 
-# 2. The local secrets file. .gitignore already covers it, but `git add -f`
-#    defeats that on its own, and this file carries a live Apple app-specific
-#    password that would be permanent the moment it lands in history.
-#    `.dev.vars.example` is deliberately not matched -- it holds no values.
-if git diff --cached --name-only --diff-filter=ACMR | grep -qE '(^|/)\.dev\.vars$'; then
-	echo "" >&2
-	echo "Refusing the commit: .dev.vars is staged." >&2
-	echo "" >&2
-	echo "  That file holds a live Apple app-specific password. Once committed it is" >&2
-	echo "  in history permanently, and rotating the credential is the only remedy." >&2
-	echo "  Unstage it with: git restore --staged .dev.vars" >&2
-	echo "" >&2
-	exit 1
-fi
+# 2. Reject secret files, including .env.* and .dev.vars.* even after git add -f.
+# Sanitized .example templates are allowed only with empty assignments.
+# The checker reads the staged blobs, never the possibly different worktree.
+node scripts/secret-files.mjs --staged

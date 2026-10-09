@@ -957,7 +957,10 @@ describe("a method this runtime cannot send", () => {
 
     expect(raised.message).toMatch(/^dav-[a-z-]+$/);
     expect(serialized).not.toContain(REFUSED_CREATE_METHOD);
-    expect(serialized).not.toContain("icloud");
+    // Stack frames can contain the checkout directory name, icloud-mcp.
+    // Payloads must not name iCloud; stacks must not expose its actual hostname.
+    expect(`${JSON.stringify(ownFields(raised))}${raised.message}`).not.toContain("icloud");
+    expect(serialized).not.toContain("icloud.com");
     expect(serialized).not.toContain(FAKE_APPLE_ID);
     expect(serialized).not.toContain(FAKE_APP_PASSWORD);
   });

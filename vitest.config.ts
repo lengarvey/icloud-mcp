@@ -90,6 +90,9 @@ export default defineConfig({
               // keeping them in step is a binding that drifts, and this file is
               // the half nothing fails on.
               bindings: {
+                // Existing recall suites exercise the explicit opt-in path.
+                // recall-disabled.test.ts separately proves the default-off path.
+                RECALL_ENABLED: "true",
                 R2_ACCOUNT_ID: "test-account-id-not-real",
                 R2_ACCESS_KEY_ID: "test-access-key-not-real",
                 R2_SECRET_ACCESS_KEY: "test-secret-key-not-real",

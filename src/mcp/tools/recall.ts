@@ -44,6 +44,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { agentFor, type LeasedMail } from "../../agent/lease";
+import { recallEnabled } from "../../recall/config";
 import { isParked } from "../../agent/recall-ledger";
 import { ConnectionBusyError, toErrorCategory } from "../../errors";
 import { decodeMessageId } from "../../mail/ids";
@@ -215,6 +216,7 @@ export function registerRecallTools(
   principal: Promise<Principal>,
   deps: () => RecallDeps = recallDeps,
 ): void {
+  if (!recallEnabled()) return;
   server.registerTool(
     RECALL_TOOL_NAME,
     {
@@ -557,6 +559,7 @@ export function registerRecallBackfillTool(
   grantClient: GrantClient,
   depsFor: (mail: LeasedMail) => StepDeps = productionStepDeps,
 ): void {
+  if (!recallEnabled()) return;
   server.registerTool(
     RECALL_BACKFILL_TOOL_NAME,
     {

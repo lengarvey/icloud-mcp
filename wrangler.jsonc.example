@@ -113,6 +113,10 @@
   // the deployed login page answer 503 with a body that sends the reader to
   // look at a binding rather than at their own password.
   "vars": {
+    // Copy the exact ChatGPT callback from its MCP management page when needed.
+    // This JSON array replaces the stable ChatGPT callback default; [] disables it.
+    // "CHATGPT_REDIRECT_URIS": "[\"https://chatgpt.com/connector/oauth/YOUR_CALLBACK_ID\"]",
+    "RECALL_ENABLED": "false",
     "R2_ACCOUNT_ID": "YOUR_CLOUDFLARE_ACCOUNT_ID",
     "ALLOWED_APPLE_IDS_SEED": "[\"YOUR_APPLE_ID@example.com\"]"
   },
@@ -421,10 +425,13 @@
   // too.
   //
   // Shapes: `vectorize` is an array, `ai` is an object.
-  "vectorize": [
-    { "binding": "RECALL_INDEX", "index_name": "icloud-mcp-recall" }
-  ],
-  "ai": { "binding": "AI" },
+  // Optional: only provision these resources after choosing to enable recall.
+  // Set RECALL_ENABLED to "true" to index mail. Leave both blocks commented
+  // for the default setup. Keep RECALL_INDEX until old vectors are purged.
+  // "vectorize": [
+  //   { "binding": "RECALL_INDEX", "index_name": "icloud-mcp-recall" }
+  // ],
+  // "ai": { "binding": "AI" },
 
   // STORAGE BACKEND: sqlite
   //

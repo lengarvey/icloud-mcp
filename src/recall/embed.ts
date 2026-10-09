@@ -19,6 +19,7 @@
 // text is the platform's, and nothing about it belongs in an answer. This
 // module logs nothing (./.claude/CLAUDE.md §4).
 
+import { recallEnabled } from "./config";
 import { env } from "cloudflare:workers";
 
 /** The one embedding model recall uses. */
@@ -84,5 +85,8 @@ export function createEmbedder(ai: Ai): Embedder {
 
 /** The production embedder, over the real binding. */
 export function embedder(): Embedder {
-  return createEmbedder(env.AI);
+  if (!recallEnabled()) throw new RecallEmbedError();
+  const ai = env.AI;
+  if (ai === undefined) throw new RecallEmbedError();
+  return createEmbedder(ai);
 }
