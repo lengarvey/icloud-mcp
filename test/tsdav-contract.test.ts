@@ -30,7 +30,7 @@ import { syncCollection } from "tsdav";
 import tsdavPackage from "tsdav/package.json";
 
 /** The exact version this phase was built and verified against. */
-const PINNED_TSDAV_VERSION = "2.3.4";
+const PINNED_TSDAV_VERSION = "2.5.0";
 
 const COLLECTION_URL = "https://dav.invalid/123456/calendars/home/";
 const OLD_TOKEN = "https://dav.invalid/ns/sync/1233";

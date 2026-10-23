@@ -19,7 +19,7 @@
 //
 // The split is deliberately narrow. Anything that is not filesystem-bound
 // belongs in the workers project, where the runtime is the real one.
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
 /** The only tests that read files off disk -- the repository tree for the

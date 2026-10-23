@@ -1,3 +1,4 @@
+import { DEPLOYED_HOSTNAME } from "../src/deployed-hostname.generated";
 // Which client a request's grant belongs to (Phase 26, D-35).
 //
 // The key and the field are proved against the REAL library: a client and a
@@ -40,6 +41,7 @@ function minimalOptions() {
   };
   return {
     apiRoute: "/mcp",
+    resourceMetadata: { resource: `https://${DEPLOYED_HOSTNAME}/mcp` },
     apiHandler: handler,
     defaultHandler: handler,
     authorizeEndpoint: "/authorize",

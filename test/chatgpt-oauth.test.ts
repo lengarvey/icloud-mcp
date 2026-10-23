@@ -153,6 +153,23 @@ describe("ChatGPT real OAuth provider flow", () => {
     expect(postMismatch.headers.get("location")).toBeNull();
   });
 
+  it.each(["implicit", "plain"])("refuses the removed OAuth opt-in mode: %s", async (mode) => {
+    const env = testEnv();
+    const registration = await register(STABLE, env);
+    expect(registration.status).toBe(201);
+    const { client_id: clientId } = await registration.json() as { client_id: string };
+    const request = query(clientId, STABLE);
+    if (mode === "implicit") request.set("response_type", "token");
+    else request.set("code_challenge_method", "plain");
+    const response = await call(`/authorize?${request}`, env);
+    expect(response.status).toBe(302);
+    const target = new URL(response.headers.get("location")!);
+    expect(`${target.origin}${target.pathname}`).toBe(STABLE);
+    expect(target.searchParams.has("error")).toBe(true);
+    expect(target.searchParams.has("code")).toBe(false);
+    expect(target.searchParams.has("access_token")).toBe(false);
+  });
+
   it("rejects a different redirect URI at token exchange", async () => {
     const env = testEnv();
     const registration = await register(STABLE, env);

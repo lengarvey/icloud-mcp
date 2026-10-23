@@ -1,3 +1,4 @@
+import { DEPLOYED_HOSTNAME } from "../src/deployed-hostname.generated";
 // Losing access destroys a person's recall index (Phase 25, RCLL-06, plan 25-03).
 //
 // Runs the REAL `UserAgent`: its destroy (an instance property, reached here
@@ -104,6 +105,7 @@ function oauthHelpers() {
   return getOAuthApi(
     {
       apiRoute: "/mcp",
+    resourceMetadata: { resource: `https://${DEPLOYED_HOSTNAME}/mcp` },
       apiHandler: handler,
       defaultHandler: handler,
       authorizeEndpoint: "/authorize",

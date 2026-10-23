@@ -1,3 +1,4 @@
+import { DEPLOYED_HOSTNAME } from "../src/deployed-hostname.generated";
 // The real recall step after a real tool call (Phase 26, RCLL-08; D-26, D-29,
 // D-35).
 //
@@ -345,6 +346,7 @@ function oauthApi() {
   return getOAuthApi(
     {
       apiRoute: "/mcp",
+      resourceMetadata: { resource: `https://${DEPLOYED_HOSTNAME}/mcp` },
       apiHandler: handler,
       defaultHandler: handler,
       authorizeEndpoint: "/authorize",

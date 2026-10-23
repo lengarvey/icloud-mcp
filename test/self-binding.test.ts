@@ -439,6 +439,7 @@ function boundCall(options: {
   const headers: Record<string, string> = {
     "content-type": "application/json",
     accept: "application/json, text/event-stream",
+    "MCP-Protocol-Version": "2026-07-28",
     "Mcp-Method": "tools/list",
   };
   if (options.host !== null) {

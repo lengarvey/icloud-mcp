@@ -2859,8 +2859,8 @@ describe("what property NAMES iCloud carries, asked exhaustively", () => {
     }
   });
 
-  it("says the reading is SHORT when the library caps the body", async () => {
-    // The DAV library truncates a raw body it hands back, and a truncated body
+  it("says the reading is SHORT when the probe caps the body", async () => {
+    // This probe bounds the raw body it examines, and a truncated body
     // means names are MISSING from the reading. Silence there is exactly the
     // failure class this whole plan exists to remove — a short answer that does
     // not say it is short — so it gets its own value on the discriminator rather
@@ -2883,7 +2883,25 @@ describe("what property NAMES iCloud carries, asked exhaustively", () => {
     // and one reported as complete would be the silent short answer.
     expect(home.names!.length).toBeGreaterThan(0);
     expect(home.names!.length).toBeLessThan(many.length);
+    expect(home.names).not.toContain("d:property-399");
+    expect(home.bodyChars).toBe(4096);
     expect(home.blocks).not.toBeNull();
+  });
+
+  it.each([4095, 4096, 4097])("reports the exact local reading boundary for %i characters", async (length) => {
+    const stub = davStub({
+      caldavHomeBody: calendarListWithInboxBody,
+      propNames: (url) => new Response(
+        `<multistatus>${propNameBody(url, "d:displayname")}</multistatus>`.padEnd(length, " "),
+        { status: 207, headers: { "content-type": "application/xml" } },
+      ),
+    });
+    vi.stubGlobal("fetch", stub.fetch);
+    const result = await diagnoseHandler(createDavFetch(owner))({ probePropertyNames: true });
+    const home = targetNamed(nameProbeOf(result)!, "home")!;
+    expect(home.bodyChars).toBe(Math.min(length, 4096));
+    expect(home.reading).toBe(length > 4096 ? "names_read_truncated" : "names_read");
+    expect(home.names).toEqual(["d:displayname"]);
   });
 
   it("keeps the report when NOTHING could be derived at all", async () => {

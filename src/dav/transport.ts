@@ -357,6 +357,40 @@ async function namesValidSyncToken(response: Response): Promise<boolean> {
 const SENDABILITY_PROBE_URL = "https://method-check.invalid/";
 
 /**
+ * Discovery responses and cached homes can supply absolute URLs. Containment
+ * within a discovered home is not proof that the home belongs to Apple.
+ * Check the destination at the credential boundary on EVERY request, including
+ * discovery itself, before reading the password. Only the two DAV services and
+ * their numeric partition hosts are destinations for this credential; other
+ * Apple services, arbitrary subdomains, alternate ports and URL credentials
+ * have no place on this path. Redirects remain manual below.
+ */
+function assertCredentialDestination(input: RequestInfo | URL): void {
+  let url: URL;
+  try {
+    url = new URL(
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url,
+    );
+  } catch {
+    throw new DavNotFoundError(false);
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.port !== "" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.hash !== "" ||
+    !/^(?:p[0-9]+-)?(?:caldav|contacts)\.icloud\.com$/.test(url.hostname)
+  ) {
+    throw new DavNotFoundError(false);
+  }
+}
+
+/**
  * Refuse a method this runtime cannot express, BEFORE attempting to send it.
  *
  * **This is a behavioural check against the platform, not a restatement of
@@ -471,6 +505,7 @@ export function createDavFetch(principal: Promise<Principal>): DavFetch {
       // BEFORE the credential is built, deliberately. A request that cannot be
       // sent has no business causing a password to be read.
       assertSendableMethod(init?.method);
+      assertCredentialDestination(input);
 
       // Built per call, and merged rather than assigned, so no caller ever
       // holds a header carrying the credential.

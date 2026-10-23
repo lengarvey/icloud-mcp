@@ -615,6 +615,7 @@ function toolCall(name: string): Request {
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
       host: DEPLOYED_HOSTNAME,
+      "MCP-Protocol-Version": "2026-07-28",
       "Mcp-Method": "tools/call",
       "Mcp-Name": name,
     },

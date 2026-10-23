@@ -914,6 +914,7 @@ describe("the round trip: what the page stores is what the door serves", () => {
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
         host: DEPLOYED_HOSTNAME,
+        "MCP-Protocol-Version": "2026-07-28",
         "Mcp-Method": "tools/list",
       },
       body: JSON.stringify({

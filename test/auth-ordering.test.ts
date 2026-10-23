@@ -51,6 +51,7 @@ function toolCall(path: string, extraHeaders: Record<string, string> = {}): Requ
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
       host: HOSTNAME,
+      "MCP-Protocol-Version": "2026-07-28",
       "Mcp-Method": "tools/call",
       "Mcp-Name": CANARY_TOOL_NAME,
       ...extraHeaders,
@@ -124,6 +125,21 @@ describe("the canary can actually fire", () => {
 
     expect(response.status).toBe(200);
     expect(await canaryWasInvoked()).toBe(true);
+  });
+});
+
+describe("modern MCP header and body agreement", () => {
+  it.each(["MCP-Protocol-Version", "Mcp-Method", "Mcp-Name"])("refuses a missing %s before dispatch", async (header) => {
+    const request = toolCall("/__canary/dispatch");
+    request.headers.delete(header);
+    expect((await call(request)).status).toBe(400);
+    expect(await canaryWasInvoked()).toBe(false);
+  });
+
+  it("refuses a routing name that disagrees with the body", async () => {
+    const request = toolCall("/__canary/dispatch", { "Mcp-Name": "different-tool" });
+    expect((await call(request)).status).toBe(400);
+    expect(await canaryWasInvoked()).toBe(false);
   });
 });
 

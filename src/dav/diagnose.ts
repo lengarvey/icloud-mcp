@@ -485,7 +485,7 @@ export interface PropertyNameTarget {
    * the body. It is here to separate "the server sent nothing" from "the server
    * sent something this run could not read", which are different fixes.
    *
-   * It is what was READ rather than what was sent: the DAV library caps a raw
+   * It is what was READ rather than what was sent: this probe caps the raw
    * body at `RAW_BODY_CAP`, and `reading` says `names_read_truncated` when it did.
    */
   bodyChars: number | null;
@@ -1606,14 +1606,11 @@ export async function runTaskCollectionProbe(
 // ---------------------------------------------------------------------------
 
 /**
- * The length at which the DAV library truncates a raw body it hands back.
- *
- * A library constant restated here rather than imported, because it is not
- * exported. It is used for ONE thing: deciding whether `reading` should say the
- * names are short. Being wrong about it can only mislabel a boundary case, never
- * drop a name, and a body that long against a `propname` answer has never been
- * seen — but silent truncation is exactly the failure class this whole fix exists
- * to remove, so it is detected rather than assumed away.
+ * Maximum characters this diagnostic examines for property names. Older DAV
+ * library versions truncated the raw response; tsdav 2.5 returns it in full.
+ * Enforce the diagnostic's bound locally before parsing and explicitly report
+ * the incomplete reading. This bounds our name parser, not the upstream
+ * library's response download or allocation.
  */
 const RAW_BODY_CAP = 4096;
 
@@ -2057,7 +2054,8 @@ export async function runPropertyNameProbe(
       // empty answer rather than throw.
       const first = responses[0];
       const raw: unknown = first?.raw;
-      const body = typeof raw === "string" ? raw : "";
+      const truncated = typeof raw === "string" && raw.length > RAW_BODY_CAP;
+      const body = typeof raw === "string" ? raw.slice(0, RAW_BODY_CAP) : "";
       const status = typeof first?.status === "number" ? first.status : null;
       const reading = propertyNamesInBody(body);
 
@@ -2089,8 +2087,7 @@ export async function runPropertyNameProbe(
       targets.push({
         target: ask.target,
         href: ask.href,
-        reading:
-          body.length > RAW_BODY_CAP ? READING_TRUNCATED : READING_NAMES,
+        reading: truncated ? READING_TRUNCATED : READING_NAMES,
         names: [...names].sort(),
         blocks: reading.propstats,
         status,

@@ -1,0 +1,31 @@
+name: Validate
+on:
+  pull_request:
+  push:
+    branches: [main, 'chore/dependency-refresh-*']
+permissions:
+  contents: read
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  local-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run scan
+      - run: npm run docs:tools
+      - run: npm test
+      - run: npx --no-install wrangler deploy --dry-run --outdir dist
+      - run: npm audit --audit-level=low

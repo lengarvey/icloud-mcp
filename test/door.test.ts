@@ -150,6 +150,7 @@ function toolCall(path: string, name: string = CANARY_TOOL_NAME): Request {
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
       host: HOSTNAME,
+      "MCP-Protocol-Version": "2026-07-28",
       "Mcp-Method": "tools/call",
       "Mcp-Name": name,
     },
@@ -202,6 +203,7 @@ function toolsList(path: string): Request {
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
       host: HOSTNAME,
+      "MCP-Protocol-Version": "2026-07-28",
       "Mcp-Method": "tools/list",
     },
     body: JSON.stringify({
