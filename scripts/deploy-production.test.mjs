@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {activeVersion,uploadMetadata,verifyStaged,deploy,makeApi,mainGuard,preservedExports,knownRejectedCandidate} from './deploy-production.mjs';
+import {activeVersion,uploadMetadata,verifyStaged,deploy,makeApi,mainGuard,preservedExports} from './deploy-production.mjs';
 const sha='a'.repeat(40);
 const initial={id:'old',resources:{bindings:[{name:'SECRET',type:'secret_text'},{name:'OWNER',type:'plain_text',text:'private-owner'}],script_runtime:{compatibility_date:'2026-08-01',compatibility_flags:['nodejs_compat'],usage_model:'standard'}}};
 const old=[{id:'deploy-old',versions:[{version_id:'old',percentage:100}]}];
@@ -43,40 +43,6 @@ test('preserves live Durable Object export declarations without lifecycle change
  assert.deepEqual(uploadMetadata({resources:{...initial.resources,script_runtime:{...initial.resources.script_runtime,exports}}},sha).exports,exports);
  for(const bad of [{UserAgent:{type:'durable-object',storage:'sqlite',state:'deleted'}},{UserAgent:{type:'durable-object',storage:'sqlite',renamed_to:'Other'}},{Admin:{type:'worker'}},null])assert.throws(()=>preservedExports({exports:bad}));
 });
-test('known staged repair is pinned to exact worker, active version, candidate and recorded commit',()=>{
- const production=structuredClone(initial);production.resources.script_runtime.exports={UserAgent:{type:'durable-object',storage:'sqlite'}};
- const candidate={...structuredClone(initial),id:'f573df63-7c4a-4d46-9529-88accc5ba501',annotations:{'workers/commit_sha':'d82088a723febbd7ed9d01c51465c5622985894b'}};
- const args={worker:'icloud-mcp',active:'0400b0f2-5925-4cd5-9832-055349ea60b7',production,candidate};
- assert.equal(knownRejectedCandidate(args),true);
- for(const changed of [{worker:'other'},{active:'other'},{candidate:{...candidate,id:'other'}},{candidate:{...candidate,annotations:{}}}])assert.equal(knownRejectedCandidate({...args,...changed}),false);
- const changed=structuredClone(candidate);changed.resources.bindings=[];assert.throws(()=>knownRejectedCandidate({...args,candidate:changed}));
- const runtimeChanged=structuredClone(candidate);runtimeChanged.resources.script_runtime.compatibility_date='2026-10-01';assert.throws(()=>knownRejectedCandidate({...args,candidate:runtimeChanged}));
-});
-
-test('rejects unsafe export shapes and non-identical known candidate metadata',()=>{
+test('rejects unknown export storage and configuration',()=>{
  for(const entry of [{type:'durable-object',storage:'other'},{type:'durable-object',storage:'sqlite',container:'new'},{type:'durable-object',storage:'sqlite',state:'renamed'}])assert.throws(()=>preservedExports({exports:{UserAgent:entry}}));
- const production=structuredClone(initial);production.resources.script_runtime.exports={UserAgent:{type:'durable-object',storage:'sqlite'}};
- const candidate={...structuredClone(initial),id:'f573df63-7c4a-4d46-9529-88accc5ba501',annotations:{'workers/commit_sha':'d82088a723febbd7ed9d01c51465c5622985894b'}};
- const args={worker:'icloud-mcp',active:'0400b0f2-5925-4cd5-9832-055349ea60b7',production,candidate};
- for(const mutate of [c=>c.resources.bindings[0].namespace_id='changed',c=>c.resources.script_runtime.exports={},c=>c.resources.script_runtime.exports={UserAgent:{type:'durable-object',storage:'legacy-kv'}}]){const c=structuredClone(candidate);mutate(c);assert.throws(()=>knownRejectedCandidate({...args,candidate:c}));}
-});
-test('known repair rechecks the complete candidate before any upload',async()=>{
- const active='0400b0f2-5925-4cd5-9832-055349ea60b7',id='f573df63-7c4a-4d46-9529-88accc5ba501';
- const production=structuredClone(initial);production.id=active;production.resources.script_runtime.exports={UserAgent:{type:'durable-object',storage:'sqlite'}};
- const candidate={...structuredClone(initial),id,annotations:{'workers/commit_sha':'d82088a723febbd7ed9d01c51465c5622985894b'}};
- for(const changed of [false,true]){
-  const h=harness();let reads=0;let uploaded=false;let activated=false;
-  const api=async(path,options={})=>{
-   if(path==='/deployments'&&options.method==='POST'){activated=true;return {};}
-   if(path==='/deployments')return {deployments:[{versions:[{version_id:activated?'new':active,percentage:100}]}]};
-   if(path==='/versions')return {items:[{id:uploaded?'new':id}]};
-   if(path===`/versions/${active}`)return production;
-   if(path===`/versions/${id}`){reads++;return changed&&reads===2?{...candidate,annotations:{}}:candidate;}
-   if(path==='/versions/new')return {...production,id:'new'};
-   if(path==='/versions?bindings_inherit=strict'){uploaded=true;return {id:'new'};}
-   return h.api(path,options);
-  };
-  if(changed){await assert.rejects(deploy({...h,api,sha}),/candidate changed/);assert.equal(uploaded,false);}
-  else {assert.equal((await deploy({...h,api,sha})).versionId,'new');assert.equal(reads,2);}
- }
 });
