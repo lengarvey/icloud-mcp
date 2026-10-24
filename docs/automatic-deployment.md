@@ -9,7 +9,7 @@ Configure these under repository Settings → Secrets and variables → Actions:
 - Repository secret `CLOUDFLARE_API_TOKEN`: a dedicated deployment token.
 The existing nonsecret account ID is configured in the workflow; a repository `CLOUDFLARE_ACCOUNT_ID` variable can override it when intentionally moving accounts.
 
-Use the narrowest available Cloudflare permissions. Individual Workers Editor restricted to `icloud-mcp`, plus account Workers Scripts Read for custom-domain discovery, covers the required API operations. If only legacy Workers Scripts Edit is available, it can modify all Workers in the selected account. No DNS/zone edits, KV or R2 data permissions, or account administration are needed. Store the token directly in GitHub secrets, never in this repository or chat.
+Create an account-owned API token with the **Workers** product scope and **Editor** role, restricted to the existing account. This is Cloudflare's current CI deployment role: it can update and deploy all existing Workers in that account, including other apps, but cannot create/delete Workers. No direct KV/R2 data permissions, Admin role, DNS changes or extra product permissions are needed. Store the dedicated token directly in GitHub secrets, never this repository or chat. See [Cloudflare's current authorization guide](https://developers.cloudflare.com/workers/authorization/).
 
 Repository secrets are not protected by a production environment. Repository writers can change workflow code, so main-only conditions do not isolate secrets from malicious writers. Keep write access trusted. PR jobs receive no deployment token and this workflow has no `pull_request_target` event.
 
