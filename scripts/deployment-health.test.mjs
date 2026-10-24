@@ -1,0 +1,10 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {boundedHealth,mcpHealth,puzzlesHealth} from './deployment-health.mjs';
+const sleep=async()=>{};
+test('bounded retries stop after three failures and redact errors',async()=>{let calls=0;await assert.rejects(boundedHealth(async()=>{calls++;throw new Error('secret');},{sleep}),e=>!e.message.includes('secret'));assert.equal(calls,3);});
+test('transient health failure can recover',async()=>{let calls=0;await boundedHealth(async()=>{if(++calls<2)throw new Error();},{sleep});assert.equal(calls,2);});
+test('MCP probes absent and bogus credentials without redirects',async()=>{const calls=[];await mcpHealth({hostname:'test.invalid',sleep,fetchImpl:async(u,o)=>{calls.push(o);return new Response('',{status:401,headers:{'WWW-Authenticate':'Bearer realm="test"'}});}});assert.equal(calls.length,2);assert.equal(calls[0].headers.Authorization,undefined);assert.match(calls[1].headers.Authorization,/invalid/);assert(calls.every(o=>o.redirect==='error'&&o.signal));});
+test('MCP accepting bogus auth fails',async()=>{await assert.rejects(mcpHealth({hostname:'test.invalid',sleep,fetchImpl:async()=>new Response('private',{status:200})}),/health checks failed/);});
+test('puzzles verifies exact bytes',async()=>{await puzzlesHealth({hostname:'test.invalid',assets:{'/':Buffer.from('hello')},sleep,fetchImpl:async()=>new Response('hello')});await assert.rejects(puzzlesHealth({hostname:'test.invalid',assets:{'/':Buffer.from('hello')},sleep,fetchImpl:async()=>new Response('different')}),/health checks failed/);});
+test('puzzles rejects oversized responses',async()=>{await assert.rejects(puzzlesHealth({hostname:'test.invalid',assets:{'/':Buffer.from('hello')},sleep,fetchImpl:async()=>new Response('x'.repeat(2*1024*1024+1))}),/health checks failed/);});
