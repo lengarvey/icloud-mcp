@@ -14,7 +14,8 @@ export function canonical(value) {
 export class DeploymentOutcomeError extends Error { constructor(code) { super(code); this.code = code; } }
 function requireSame(a, b, message) { if (canonical(a) !== canonical(b)) throw new Error(message); }
 export function activeVersion(deployments) {
-  const current = deployments[0];
+  const entries = Array.isArray(deployments) ? deployments : deployments?.deployments;
+  const current = entries?.[0];
   if (current?.versions?.length !== 1 || current.versions[0].percentage !== 100) throw new Error('Expected one production version serving 100%; refusing a split rollout.');
   return current.versions[0].version_id;
 }

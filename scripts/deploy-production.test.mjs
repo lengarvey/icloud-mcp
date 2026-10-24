@@ -10,7 +10,7 @@ function harness(change={}) {
   calls.push({path,method:options.method||'GET'});
   if(path==='/deployments'&&options.method==='POST'){activated=true;return {id:'deployed'};}
   if(path==='/versions?bindings_inherit=strict'&&options.method==='POST'){uploaded=true;const meta=JSON.parse(await options.body.get('metadata').text());assert.equal(meta.bindings[1].type,'inherit');assert(!JSON.stringify(meta).includes('private-owner'));return {id:'new'};}
-  if(path==='/deployments')return activated?[{versions:[{version_id:'new',percentage:100}]}]:old;
+  if(path==='/deployments')return {deployments:activated?[{versions:[{version_id:'new',percentage:100}]}]:old};
   if(path==='/versions')return {items:[{id:uploaded?'new':change.latest||'old'}]};
   if(path==='/versions/old')return initial;
   if(path==='/versions/new')return change.staged||{...initial,id:'new'};
@@ -34,3 +34,5 @@ test('main guard rejects stale SHA and withholds API bodies',async()=>{const gua
 test('main guard required before any remote request',async()=>{const h=harness();await assert.rejects(deploy({...h,sha,assertCurrentMain:undefined}),/guard is required/);assert.equal(h.calls.length,0);});
 test('stale main before upload prevents mutations',async()=>{const h=harness();let calls=0;await assert.rejects(deploy({...h,sha,assertCurrentMain:async()=>{if(++calls===2)throw new Error('stale');}}),/stale/);assert(h.calls.every(c=>c.method==='GET'));});
 test('stale main after upload prevents activation',async()=>{const h=harness();let calls=0;await assert.rejects(deploy({...h,sha,assertCurrentMain:async()=>{if(++calls===3)throw new Error('stale');}}),/stale/);assert(!h.activated);});
+
+test('accepts Cloudflare deployments envelope and fails closed on malformed result',()=>{assert.equal(activeVersion({deployments:old}),'old');assert.throws(()=>activeVersion({}));assert.throws(()=>activeVersion({deployments:[]}));});
