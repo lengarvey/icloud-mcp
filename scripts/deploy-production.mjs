@@ -19,6 +19,32 @@ export function activeVersion(deployments) {
   if (current?.versions?.length !== 1 || current.versions[0].percentage !== 100) throw new Error('Expected one production version serving 100%; refusing a split rollout.');
   return current.versions[0].version_id;
 }
+export function preservedExports(runtime) {
+  if (runtime.exports === undefined) return {};
+  if (!runtime.exports || typeof runtime.exports !== 'object' || Array.isArray(runtime.exports)) throw new Error('Invalid existing exports.');
+  for (const [name, entry] of Object.entries(runtime.exports)) {
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) || entry?.type !== 'durable-object' || !['sqlite','legacy-kv'].includes(entry.storage) ||
+        Object.keys(entry).some(k => !['type','storage','state'].includes(k)) || (entry.state !== undefined && entry.state !== 'created')) {
+      throw new Error('Unsupported existing export lifecycle; manual review required.');
+    }
+  }
+  return {exports: structuredClone(runtime.exports)};
+}
+// One-time repair of the candidate uploaded by verified CI run 40088117418,
+// attempt 2. Strict inheritance succeeded; the runtime equality guard then
+// rejected missing declarative exports before activation. No other staged
+// version is trusted, and all comparisons are repeated before the next upload.
+export function knownRejectedCandidate({worker, active, candidate, production}) {
+  if (worker !== 'icloud-mcp' || active !== '0400b0f2-5925-4cd5-9832-055349ea60b7' ||
+      candidate.id !== 'f573df63-7c4a-4d46-9529-88accc5ba501' ||
+      candidate.annotations?.['workers/commit_sha'] !== 'd82088a723febbd7ed9d01c51465c5622985894b') return false;
+  const expected = {UserAgent:{type:'durable-object',storage:'sqlite'}};
+  requireSame(production.resources.script_runtime.exports, expected, 'Repair baseline exports changed.');
+  const {exports: omitted, ...runtime} = production.resources.script_runtime;
+  requireSame(candidate.resources.script_runtime, runtime, 'Rejected candidate runtime changed.');
+  verifyStaged({...production, resources:{...production.resources,script_runtime:runtime}}, candidate);
+  return true;
+}
 export function uploadMetadata(version, sha) {
   const runtime = version.resources?.script_runtime;
   const bindings = version.resources?.bindings;
@@ -26,6 +52,7 @@ export function uploadMetadata(version, sha) {
   if (new Set(bindings.map(x => x.name)).size !== bindings.length || bindings.some(x => !x.name)) throw new Error('Invalid production binding names.');
   return {
     main_module: 'index.js',
+    ...preservedExports(runtime),
     compatibility_date: runtime.compatibility_date,
     compatibility_flags: runtime.compatibility_flags || [],
     usage_model: runtime.usage_model,
@@ -62,11 +89,14 @@ export async function deploy({api, build, sha, assertCurrentMain, health, statel
   if (stateless && version.resources?.bindings?.length !== 0) throw new Error('Stateless deployment requires zero production bindings.');
   const inheritanceSource = latest.items?.[0]?.id;
   if (!inheritanceSource) throw new Error('Latest version unavailable.');
+  let reviewedCandidate;
   if (inheritanceSource !== active) {
     // Only zero-binding workers can safely ignore an unactivated upload: no
     // secret or data-binding state can be inherited from that candidate.
-    if (!stateless) throw new Error('Unactivated version found: stateful reconciliation requires review; no mutations performed.');
-    verifyStaged(version, await api(`/versions/${inheritanceSource}`));
+    const candidate = await api(`/versions/${inheritanceSource}`);
+    if (!stateless && !knownRejectedCandidate({worker,active,candidate,production:version})) throw new Error('Unactivated version found: stateful reconciliation requires review; no mutations performed.');
+    if (stateless) verifyStaged(version, candidate);
+    else reviewedCandidate = candidate;
   }
   const settings = await api('/settings');
   const domains = await api(`/workers/domains?service=${encodeURIComponent(worker)}`);
@@ -82,6 +112,7 @@ export async function deploy({api, build, sha, assertCurrentMain, health, statel
   requireSame((await api('/versions')).items?.[0]?.id, inheritanceSource, 'Latest version changed during build.');
   requireSame(await api('/deployments'), deployments, 'Production deployment changed during build.');
   requireSame(await api('/settings'), settings, 'Production settings changed during build.');
+  if (reviewedCandidate) requireSame(await api(`/versions/${inheritanceSource}`), reviewedCandidate, 'Reviewed candidate changed during build.');
   const form = new FormData();
   form.append('metadata', new Blob([JSON.stringify(metadata)], {type:'application/json'}));
   form.append('index.js', new Blob([bundle], {type:'application/javascript+module'}), 'index.js');
