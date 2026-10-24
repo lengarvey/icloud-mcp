@@ -35,6 +35,8 @@ import {
   rfc5322Date,
 } from "../src/mail/compose";
 
+import { attachmentsFrom, walkBodystructure } from "../src/mail/mime";
+
 const DECODER = new TextDecoder();
 const ENCODER = new TextEncoder();
 
@@ -1535,6 +1537,17 @@ describe("the multipart/mixed outer wrap", () => {
   });
 });
 
+describe("encoded threading values", () => {
+  it.each(["<x=?utf-8?B?DQpCY2M6IGV2aWw=?=@example.invalid>", "<x=?utf-8?Q?=0A?=@example.invalid>"])(
+    "refuses encoded-word token %s instead of repairing it", (token) => {
+      expect(foldReferences([token])).toBeNull();
+      expect(buildDraft(draft({ inReplyTo: token }))).toMatchObject({
+        built: false, refusal: "references-illegal-characters",
+      });
+    },
+  );
+});
+
 describe("contentDispositionParams", () => {
   it("emits the plain parameter alone for an ordinary ASCII name", () => {
     expect(contentDispositionParams("resume.pdf")).toBe(
@@ -1543,13 +1556,12 @@ describe("contentDispositionParams", () => {
     expect(contentDispositionParams("resume.pdf")).not.toContain("filename*");
   });
 
-  it("emits BOTH forms for a non-ASCII name, with the extension intact", () => {
-    // The extended form takes precedence in a client that understands it; the
-    // plain one is the fallback for a client that does not. The extension is
-    // what decides whether the attachment opens, so it survives the fallback.
+  it("emits only the lossless extended form for a non-ASCII name", () => {
+    // PostalMime 4 deliberately prefers a plain parameter if both exist.
+    // One RFC 2231 parameter avoids silently selecting a lossy fallback.
     const params = contentDispositionParams("Lebenslauf Müller.pdf")!;
 
-    expect(params).toContain('filename="Lebenslauf M_ller.pdf"');
+    expect(params).not.toContain("filename=");
     expect(params).toContain("filename*=UTF-8''Lebenslauf%20M%C3%BCller.pdf");
     expect(params.endsWith(".pdf")).toBe(true);
   });
@@ -1564,13 +1576,10 @@ describe("contentDispositionParams", () => {
     expect(params).toContain("filename*=UTF-8''Gr%C3%BC%C3%9Fe.txt");
   });
 
-  it("keeps the plain form safely inside its quoted string", () => {
-    // A quote or a backslash inside a quoted-string ends or escapes it. Both
-    // are replaced in the fallback, and the extended form carries the original
-    // losslessly — which is why the replacement is not a lossy repair.
+  it("encodes quotes and backslashes losslessly without a plain fallback", () => {
     const params = contentDispositionParams('say "hi"\\.txt')!;
 
-    expect(params).toContain('filename="say _hi__.txt"');
+    expect(params).not.toContain("filename=");
     expect(params).toContain("filename*=UTF-8''say%20%22hi%22%5C.txt");
   });
 
@@ -1668,16 +1677,36 @@ describe("two attachments, read back through PostalMime", () => {
     expect(parsed.html).toContain("<p>Hello there.</p>");
   });
 
-  it("round-trips a non-ASCII filename through the extended parameter", async () => {
+  it.each([
+    "Lebenslauf Müller.pdf",
+    "履歴書📎.pdf",
+    'say "hi"\\.txt',
+    "literal%20name.txt",
+  ])("round-trips filename %s without changing its content", async (filename) => {
     const parsed = await PostalMime.parse(
       messageOf(
         canonicalDraft({
-          attachments: [attachment({ filename: "Lebenslauf Müller.pdf" })],
+          attachments: [attachment({ filename })],
         }),
       ),
     );
 
     expect(parsed.attachments).toHaveLength(1);
-    expect(parsed.attachments[0]!.filename).toBe("Lebenslauf Müller.pdf");
+    expect(parsed.attachments[0]!.filename).toBe(filename);
+    // Model the IMAP server retaining the parameter our emitted header names.
+    // BODYSTRUCTURE, not PostalMime, is authoritative for mailbox attachment IDs.
+    const params = contentDispositionParams(filename)!;
+    const extended = /filename\*=UTF-8''([^\r\n]+)/.exec(params);
+    const [structured] = attachmentsFrom(walkBodystructure([
+      "APPLICATION", "PDF", null, null, null, "BASE64", "4", null,
+      ["ATTACHMENT", extended
+        ? ["FILENAME*", `UTF-8''${extended[1]}`]
+        : ["FILENAME", filename]],
+      null, null,
+    ]));
+    expect(structured.filename).toBe(filename);
+    expect(new Uint8Array(parsed.attachments[0]!.content as ArrayBuffer)).toEqual(
+      attachment().content,
+    );
   });
 });

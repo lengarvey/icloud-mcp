@@ -1034,10 +1034,17 @@ describe("level C: the real change check, serving the fixture's raw headers", ()
     }
   });
 
-  it("the fenced rows are the fixture's rows exactly, so the fixture has not drifted from the real parser", async () => {
+  // Postal 4 folds decoded line breaks to spaces. Keep the hostile raw/direct
+  // fixtures unchanged: the lower-level fence tests must still see CR/LF.
+  const wireRow = (row: NewMailRow): NewMailRow => ({
+    ...row,
+    subject: row.subject?.replace(/[\r\n]+/g, " ") ?? null,
+  });
+
+  it("the fenced rows match the fixture with the parser's line-break folding", async () => {
     for (const page of await wholeMailboxOnTheWire()) {
       const fenced = readFencedJson(page.answer.content[1]?.text as string) as { INBOX: { rows: NewMailRow[] } };
-      expect(fenced.INBOX.rows).toEqual(page.fixtures.map((one) => one.row));
+      expect(fenced.INBOX.rows).toEqual(page.fixtures.map((one) => wireRow(one.row)));
     }
   });
 
@@ -1066,7 +1073,7 @@ describe("level C: the real change check, serving the fixture's raw headers", ()
       (a, b) =>
         HOSTILE_MAILBOX.findIndex((one) => one.row.id === a.id) - HOSTILE_MAILBOX.findIndex((one) => one.row.id === b.id),
     );
-    expect(inFixtureOrder).toEqual(parsedRows(HOSTILE_ROWS));
+    expect(inFixtureOrder).toEqual(parsedRows(HOSTILE_ROWS.map(wireRow)));
     expect(evaluate(FIXTURE_RULES, inFixtureOrder)).toEqual(expectedVerdicts(HOSTILE_MAILBOX));
   });
 

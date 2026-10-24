@@ -1070,6 +1070,15 @@ describe("parseParentHeaders", () => {
     });
   });
 
+  it("preserves encoded threading words for refusal before any repair", async () => {
+    const token = "<x=?utf-8?B?DQpCY2M6IGV2aWw=?=@example.invalid>";
+    const headers = await parseParentHeaders(ENCODER.encode(
+      `Message-ID: ${token}\r\nReferences: ${token}\r\n\r\n`,
+    ));
+    expect(headers.messageId).toBe(token);
+    expect(headers.references).toEqual([token]);
+  });
+
   it("splits a folded References into its tokens, losing none", async () => {
     const headers = await parseParentHeaders(
       ENCODER.encode(

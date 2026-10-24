@@ -28,7 +28,7 @@
     "agents": "0.30.1",
     "aws4fetch": "1.0.20",
     "ical.js": "2.2.1",
-    "postal-mime": "3.0.1",
+    "postal-mime": "4.1.4",
     "tsdav": "2.5.0",
     "unpdf": "1.9.1",
     "zod": "4.6.7"
@@ -47,6 +47,9 @@
   "overrides": {
     "@cloudflare/vitest-plugin": {
       "zod": "$zod"
+    },
+    "miniflare": {
+      "undici": "7.30.1"
     }
   }
 }

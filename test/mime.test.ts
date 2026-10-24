@@ -449,6 +449,20 @@ describe("attachmentsFrom", () => {
     expect(attachment.filename).toBe("café.pdf");
   });
 
+  it.each(["FILENAME*", "FILENAME*0*"])("decodes encoded parameter %s", (key) => {
+    const wire = '("APPLICATION" "PDF" NIL NIL NIL "BASE64" 4 NIL' +
+      ` ("ATTACHMENT" ("${key}" "UTF-8''caf%C3%A9.pdf")) NIL NIL)`;
+    expect(attachmentsFrom(walkBodystructure(bodyStructure(wire)))[0].filename)
+      .toBe("café.pdf");
+  });
+
+  it("keeps the lossless structure filename for old dual-parameter messages", () => {
+    const wire = '("APPLICATION" "PDF" NIL NIL NIL "BASE64" 4 NIL' +
+      ' ("ATTACHMENT" ("FILENAME" "cafe.pdf" "FILENAME*" "UTF-8\'\'caf%C3%A9.pdf")) NIL NIL)';
+    expect(attachmentsFrom(walkBodystructure(bodyStructure(wire)))[0].filename)
+      .toBe("café.pdf");
+  });
+
   it("joins an RFC 2231 continuation-split filename in section order", () => {
     const split =
       '(("TEXT" "PLAIN" NIL NIL NIL "7BIT" 12 1)' +

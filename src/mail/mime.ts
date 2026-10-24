@@ -360,7 +360,8 @@ function paramsFrom(node: SExpr | undefined): Record<string, string> {
     sections.push({
       index: match[2] === undefined ? 0 : Number(match[2]),
       value,
-      extended: match[3] === "*",
+      // A bare filename* is encoded too; filename*0 without the last star is not.
+      extended: match[2] === undefined || match[3] === "*",
     });
     continuations.set(match[1], sections);
   }
