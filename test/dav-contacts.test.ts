@@ -1928,15 +1928,10 @@ describe("getContactWithEtag", () => {
     // would be a fidelity loss arriving before the patch had a chance to preserve
     // anything. Full-string equality, deliberately.
     //
-    // **The one measured difference, and it is the XML layer's rather than this
-    // module's.** A card handed to `xml-js` inside a CDATA section comes back
-    // without its trailing terminator — measured here, not assumed, which is why
-    // the expectation names the transformation instead of trimming both sides
-    // into agreement. It is consistent with what 16-03 recorded from the other
-    // end: `patchContactCard` APPENDS the terminator rather than preserving one,
-    // so the round trip closes even though the fetched bytes arrive one CRLF
-    // short. Nothing INSIDE the card moves, which is the property the patch path
-    // actually depends on.
+    // tsdav 2.5 preserves the trailing terminator inside CDATA as well as the
+    // rest of the card. Earlier versions removed that CRLF in the XML layer.
+    // Assert the full original bytes, without trimming either side: preserving
+    // more of the source must not conceal a change inside the card.
     const read = await getContactWithEtag(
       env,
       principal,
@@ -1947,7 +1942,7 @@ describe("getContactWithEtag", () => {
     expect(FULL_CONTACT_VCF.endsWith("\r\n"), "the fixture lost its terminator").toBe(
       true,
     );
-    expect(read.body).toBe(FULL_CONTACT_VCF.slice(0, -2));
+    expect(read.body).toBe(FULL_CONTACT_VCF);
   });
 
   it("keeps the version stamp byte-exact, weak prefix and quotes included", async () => {

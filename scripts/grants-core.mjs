@@ -1,3 +1,4 @@
+import { DEPLOYED_HOSTNAME } from "../src/deployed-hostname.generated";
 // The owner's grants tool, minus the terminal (LIFE-05).
 //
 // **What this file is.** Since Phase 11, removing somebody is two steps: take
@@ -429,6 +430,7 @@ function minimalOptions() {
   };
   return {
     apiRoute: "/mcp",
+    resourceMetadata: { resource: `https://${DEPLOYED_HOSTNAME}/mcp` },
     apiHandler: handler,
     defaultHandler: handler,
     authorizeEndpoint: "/authorize",

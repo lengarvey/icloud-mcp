@@ -212,6 +212,9 @@ const DEFAULT_MEDIA_TYPE = "application/octet-stream";
  * a value with no whitespace in it cannot carry an instruction.
  */
 const REFERENCE_TOKEN = /^<[^<>\s]+>$/;
+// Encoded words are not legal in msg-id tokens. Refuse rather than decode or
+// repair them: Postal 4 folds decoded CR/LF, hiding a hostile threading value.
+const ENCODED_THREADING_WORD = /=\?[^?]+\?[bq]\?/i;
 
 /**
  * RFC 5322's hard per-line ceiling, in octets, including the CRLF's absence.
@@ -292,7 +295,7 @@ const MONTH_NAMES = [
  * the declared media type were both chosen by whoever sent the message the file
  * was copied out of, and both land in headers of a message the user will send.
  * The filename is refused outright for CR, LF and NUL and otherwise emitted in
- * the two parameter forms `contentDispositionParams` builds; the media type is
+ * the unambiguous parameter form `contentDispositionParams` builds; the media type is
  * metadata rather than a gate, so an unusable one is replaced with a neutral
  * value rather than refusing the whole draft.
  */
@@ -706,7 +709,9 @@ export function rfc5322Date(now: Date): string {
 export function foldReferences(tokens: string[]): string | null {
   const kept: string[] = [];
   for (const token of tokens) {
-    if (ILLEGAL_IN_HEADER_VALUE.test(token)) return null;
+    if (
+      ILLEGAL_IN_HEADER_VALUE.test(token) || ENCODED_THREADING_WORD.test(token)
+    ) return null;
     if (!REFERENCE_TOKEN.test(token)) continue;
     // **Dropped on the same footing a shape-failing token is dropped, and for
     // a stronger reason: it cannot be folded at all.** `REFERENCE_TOKEN` places
@@ -1011,25 +1016,6 @@ function rfc2231Value(name: string): string {
 }
 
 /**
- * The ASCII rendition of a name, safe inside a `quoted-string`.
- *
- * Walks code POINTS rather than code units, so an astral character becomes one
- * underscore rather than two — the same reason `encodeHeaderText` iterates with
- * `for…of`.
- *
- * The extension survives without being special-cased: a dot and the ASCII
- * letters that follow it are all inside the quotable class, so `résumé.pdf`
- * becomes `r_sum_.pdf` and still opens as a PDF.
- */
-function asciiFilename(name: string): string {
-  let rendered = "";
-  for (const character of name) {
-    rendered += QUOTABLE_ASCII.test(character) ? character : "_";
-  }
-  return rendered;
-}
-
-/**
  * The `Content-Disposition` parameters for one attachment, or a refusal.
  *
  * **The value this returns is the tail of a header in a message the user will
@@ -1047,14 +1033,11 @@ function asciiFilename(name: string): string {
  * attacker's intent while reporting success, which is strictly worse than not
  * sending one.
  *
- * **2. Both forms when the plain one is lossy.** The plain parameter carries an
- * ASCII rendition inside a quoted string; the extended parameter carries the
- * name losslessly, UTF-8 percent-encoded, and takes precedence in a client that
- * understands it. The condition for emitting the second is exactly that the
- * first is not byte-identical to the name — which covers a non-ASCII name and
- * also covers an ASCII one carrying a quote or a backslash. That is why
- * replacing those two is not a lossy repair: the lossless copy always travels
- * beside the lossy one, and never instead of it.
+ * **2. One unambiguous filename parameter.** Ordinary quotable ASCII names
+ * use `filename=`. Every other name uses only the RFC 2231 extended parameter,
+ * UTF-8 percent-encoded. PostalMime 4 gives a plain parameter precedence over an
+ * extended one, so emitting a lossy plain fallback beside the lossless name
+ * silently corrupts Unicode on readback. Do not restore that ambiguous pair.
  *
  * **3. No encoded-words.** RFC 2047 words are not valid in a parameter value.
  * Some senders put one in a `name=` parameter and clients tolerate it; matching
@@ -1063,12 +1046,10 @@ function asciiFilename(name: string): string {
  * grammar actually provides for a parameter, and `encodeHeaderText` is the
  * mechanism for unstructured header text — conflating the two is the bug.
  *
- * **Whether Apple's client honours the extended form is ASSUMED, not
- * measured.** Every modern client is reported to. It is a UAT check with a
- * non-ASCII filename rather than a code question, and it is recorded as one in
- * `04-UAT.md`: the file opening at all is the pass, the name rendering
- * correctly is the bonus. Nothing structural depends on the assumption, because
- * the plain fallback keeps the extension whatever the client does.
+ * Modern RFC 2231 clients retain the original name. Legacy clients without
+ * extended-parameter support may display an unnamed attachment for these names;
+ * its MIME type and content are unchanged. No encoded-word fallback or parser
+ * fork is used to disguise that compatibility tradeoff.
  *
  * An empty name yields no parameter at all rather than `filename=""`. An empty
  * quoted string claims a name that does not exist, and absence is the true
@@ -1078,14 +1059,11 @@ export function contentDispositionParams(filename: string): string | null {
   if (ILLEGAL_IN_HEADER_VALUE.test(filename)) return null;
   if (filename.length === 0) return "";
 
-  const plain = asciiFilename(filename);
-  const params = `; filename="${plain}"`;
-  if (plain === filename) return params;
+  if ([...filename].every((character) => QUOTABLE_ASCII.test(character))) {
+    return `; filename="${filename}"`;
+  }
 
-  // Folded onto a continuation line: the two parameters together routinely
-  // exceed a comfortable line width, and the fold is the mechanism the grammar
-  // provides for a header longer than one line.
-  return `${params};${CRLF} filename*=UTF-8''${rfc2231Value(filename)}`;
+  return `;${CRLF} filename*=UTF-8''${rfc2231Value(filename)}`;
 }
 
 /**
@@ -1347,7 +1325,8 @@ interface Threading {
 function threadingHeaders(input: DraftInput): Threading | null {
   if (
     input.inReplyTo !== null &&
-    ILLEGAL_IN_HEADER_VALUE.test(input.inReplyTo)
+    (ILLEGAL_IN_HEADER_VALUE.test(input.inReplyTo) ||
+      ENCODED_THREADING_WORD.test(input.inReplyTo))
   ) {
     return null;
   }

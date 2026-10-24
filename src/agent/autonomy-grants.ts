@@ -1,3 +1,4 @@
+import { DEPLOYED_HOSTNAME } from "../deployed-hostname.generated";
 // The one place autonomy asks the OAuth library about grants (Phase 27, D-28, D-33).
 //
 // Two questions, both about one person, both answered from the library's own
@@ -25,7 +26,7 @@
 // WHY NOT `src/auth/oauth.ts`. That module holds the Worker's real provider
 // options, and through them it reaches the Worker's handlers and the mail tree.
 // The person's object must never import those. So this file builds its own
-// minimal options object, the same five fields `scripts/grants-core.mjs` uses.
+// minimal options object, the same configuration `scripts/grants-core.mjs` uses.
 // Phase 25's `src/recall/grant-check.ts` keeps its own copy for the same reason.
 // The listing and the revoke only need the store.
 //
@@ -96,6 +97,7 @@ function minimalOptions(): OAuthProviderOptions<{ OAUTH_KV: KVNamespace }> {
   };
   return {
     apiRoute: "/mcp",
+    resourceMetadata: { resource: `https://${DEPLOYED_HOSTNAME}/mcp` },
     apiHandler: handler,
     defaultHandler: handler,
     authorizeEndpoint: "/authorize",

@@ -1530,10 +1530,13 @@ export async function parseParentHeaders(
   const parsed = await PostalMime.parse(block);
 
   return {
-    messageId: parsed.messageId ?? null,
+    // RFC 5322 threading IDs are structured tokens, not RFC 2047 text.
+    // Keep their undecoded values so Postal 4 cannot turn an encoded control
+    // character into a space before the composer's refusal boundary sees it.
+    messageId: parsed.headers.find((header) => header.key === "message-id")?.value ?? null,
     // The library hands back the field's raw value with folds already merged,
     // so splitting on whitespace recovers the tokens a folded chain arrived as.
-    references: (parsed.references ?? "")
+    references: (parsed.headers.find((header) => header.key === "references")?.value ?? "")
       .split(/\s+/)
       .filter((token) => token.length > 0),
     replyTo: addressesOf(parsed.replyTo),

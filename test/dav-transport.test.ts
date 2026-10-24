@@ -51,6 +51,69 @@ owner.catch(() => {});
 
 const TARGET = "https://p42-caldav.icloud.com/1234567890/calendars/";
 
+describe("DAV credential destinations", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("refuses an off-service discovery target before sending credentials", async () => {
+    const stub = statusStub(200);
+    vi.stubGlobal("fetch", stub.fetch);
+    await expect(createDavFetch(owner)("https://attacker.invalid/principal/", {
+      method: "PROPFIND",
+    })).rejects.toBeInstanceOf(DavNotFoundError);
+    expect(stub.observed).toHaveLength(0);
+  });
+
+  it.each([
+    "http://caldav.icloud.com/principal/",
+    "https://caldav.icloud.com:8443/principal/",
+    "https://caldav.icloud.com.attacker.invalid/principal/",
+    "https://attacker-caldav.icloud.com/principal/",
+    "https://www.icloud.com/principal/",
+    "https://caldav.icloud.com./principal/",
+    "https://user@caldav.icloud.com/principal/",
+    "https://caldav.icloud.com@attacker.invalid/principal/",
+    "https://caldav.icloud.com/principal/#fragment",
+    "https://127.0.0.1/principal/",
+    "/relative/principal/",
+  ])("refuses unsafe destination %s without a request", async (target) => {
+    const stub = statusStub(200);
+    vi.stubGlobal("fetch", stub.fetch);
+    await expect(createDavFetch(owner)(target)).rejects.toBeInstanceOf(DavNotFoundError);
+    expect(stub.observed).toHaveLength(0);
+  });
+
+  it.each([
+    "https://caldav.icloud.com/principal/",
+    "https://contacts.icloud.com/principal/",
+    "https://p42-caldav.icloud.com/principal/",
+    "https://p77-contacts.icloud.com/principal/",
+    "https://CALDAV.ICLOUD.COM:443/principal/",
+  ])("permits the service destination %s through the mocked transport", async (target) => {
+    const stub = statusStub(200);
+    vi.stubGlobal("fetch", stub.fetch);
+    expect((await createDavFetch(owner)(target)).status).toBe(200);
+    expect(stub.observed).toHaveLength(1);
+    expect(stub.observed[0]?.headers.get("authorization")).toBe(davAuthHeader(await owner));
+  });
+
+  it("checks URL and Request inputs as well as strings", async () => {
+    const stub = statusStub(200);
+    vi.stubGlobal("fetch", stub.fetch);
+    for (const target of [new URL("https://attacker.invalid/"), new Request("https://attacker.invalid/")]) {
+      await expect(createDavFetch(owner)(target)).rejects.toBeInstanceOf(DavNotFoundError);
+    }
+    expect(stub.observed).toHaveLength(0);
+  });
+
+  it("refuses before reading a credential from a forged principal", async () => {
+    const stub = statusStub(200);
+    vi.stubGlobal("fetch", stub.fetch);
+    const forged = Promise.resolve({ ...(await owner) });
+    await expect(createDavFetch(forged)("https://attacker.invalid/")).rejects.toBeInstanceOf(DavNotFoundError);
+    expect(stub.observed).toHaveLength(0);
+  });
+});
+
 /**
  * The RFC 4791 calendar-creation method this runtime refuses to build.
  *

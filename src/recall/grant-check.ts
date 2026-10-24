@@ -1,3 +1,4 @@
+import { DEPLOYED_HOSTNAME } from "../deployed-hostname.generated";
 // Does this person still hold any grant? (Phase 25, RCLL-06, D-09, D-25)
 //
 // Grants are revoked only through the owner's script, which runs in Node
@@ -34,7 +35,7 @@ import { AUTONOMY_CLIENT_ID } from "../agent/autonomy-client";
 const USER_ID = /^[0-9a-f]{64}$/;
 
 /**
- * The smallest options object the library accepts, the same five fields
+ * The smallest options object the library accepts, the same configuration
  * `scripts/grants-core.mjs` uses.
  *
  * Defined here rather than imported from `src/auth/oauth.ts`: that module
@@ -50,6 +51,7 @@ function minimalOptions(): OAuthProviderOptions<{ OAUTH_KV: KVNamespace }> {
   };
   return {
     apiRoute: "/mcp",
+    resourceMetadata: { resource: `https://${DEPLOYED_HOSTNAME}/mcp` },
     apiHandler: handler,
     defaultHandler: handler,
     authorizeEndpoint: "/authorize",

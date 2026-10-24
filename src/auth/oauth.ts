@@ -108,8 +108,6 @@ export const oauthProviderOptions: OAuthProviderOptions<Env> = {
     resource_name: "iCloud MCP",
   },
 
-  // Both are already the defaults. Restated so that turning either on is a
-  // change someone has to write, and a reviewer can see.
-  allowImplicitFlow: false,
-  allowPlainPKCE: false,
+  // Provider 1.x supports code flow with S256; the old opt-in switches
+  // were removed. The OAuth tests pin refusal of implicit flow and plain PKCE.
 };
