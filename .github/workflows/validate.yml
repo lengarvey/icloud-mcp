@@ -5,11 +5,11 @@ on:
     branches: [main, 'chore/dependency-refresh-*']
 permissions:
   contents: read
-concurrency:
-  group: validate-${{ github.ref }}
-  cancel-in-progress: true
 jobs:
   local-checks:
+    concurrency:
+      group: validate-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -27,5 +27,33 @@ jobs:
       - run: npm run scan
       - run: npm run docs:tools
       - run: npm test
+      - run: node --test scripts/deploy-production.test.mjs scripts/deployment-health.test.mjs scripts/deployment-lifecycle.test.mjs
       - run: npx --no-install wrangler deploy --dry-run --outdir dist
       - run: npm audit --audit-level=low
+  deploy-production:
+    needs: local-checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: cloudflare-production-icloud-mcp
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+      - name: Upload and activate verified main code
+        run: node scripts/deploy-production.mjs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || '785f14afe560aeea2c5d3a96f9df879c' }}
+          GITHUB_TOKEN: ${{ github.token }}
+          WRANGLER_SEND_METRICS: 'false'
